@@ -30,7 +30,7 @@ struct TranscriptView: View {
             Divider()
             footer
         }
-        .frame(minWidth: 560, minHeight: 420)
+        .frame(minWidth: 560, minHeight: 720)
         .confirmationDialog(
             "Transcribe this track again?", isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } }),
             presenting: pending

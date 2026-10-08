@@ -5,6 +5,7 @@ struct MacRecordApp: App {
     @State private var model = RecorderModel()
     @State private var models = WhisperModelStore()
     @State private var transcription = TranscriptionModel()
+    @State private var ai = AIConfigStore()
 
     var body: some Scene {
         WindowGroup {
@@ -24,6 +25,7 @@ struct MacRecordApp: App {
         Settings {
             SettingsView()
                 .environment(models)
+                .environment(ai)
         }
     }
 }
