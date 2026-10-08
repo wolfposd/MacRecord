@@ -58,6 +58,7 @@ final class TranscriptionModel {
     private(set) var speakers: [Speaker] = []
     private(set) var names: [String: String] = [:]
     private(set) var saveError: String?
+    private(set) var summary = ""
 
     private var task: Task<Void, Never>?
 
@@ -73,6 +74,7 @@ final class TranscriptionModel {
             return
         }
         self.folder = folder
+        refreshSummary()
         modelTitle = model.title
         entries = []
         tracks = []
@@ -338,6 +340,26 @@ final class TranscriptionModel {
         return String(format: "%02d:%02d:%02d", total / 3600, (total / 60) % 60, total % 60)
     }
 
+    // MARK: Summary
+
+    /// Re-reads Summary.txt (e.g. after it was edited from the recordings list).
+    func refreshSummary() {
+        summary = folder.map { RecordingSummary.read(in: $0) } ?? ""
+    }
+
+    func setSummary(_ text: String) {
+        guard let folder else { return }
+        let clean = RecordingSummary.clamp(text)
+        guard clean != summary else { return }
+        do {
+            try RecordingSummary.write(clean, in: folder)
+            summary = clean
+            saveError = nil
+        } catch {
+            saveError = "Could not save the summary: \(error.localizedDescription)"
+        }
+    }
+
     // MARK: Speaker names
 
     /// Custom name if one was given, otherwise the generated label.
@@ -400,6 +422,7 @@ final class TranscriptionModel {
         defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
 
         self.folder = folder
+        refreshSummary()
         entries = []; tracks = []; speakers = []; names = [:]; saveError = nil
         outputFile = folder.appendingPathComponent(Self.textName)
 

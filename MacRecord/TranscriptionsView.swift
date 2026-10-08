@@ -7,6 +7,7 @@ struct Recording: Identifiable, Hashable {
     let trackCount: Int
     let bytes: Int64
     let hasTranscript: Bool
+    let summary: String
 
     var title: String {
         // Folders are named "MacRecord yyyy-MM-dd HH.mm.ss"; fall back to the plain folder name.
@@ -53,7 +54,8 @@ final class RecordingsModel {
                 url: url,
                 date: values?.creationDate ?? values?.contentModificationDate ?? .distantPast,
                 trackCount: audio.count, bytes: bytes,
-                hasTranscript: names.contains("Transcript.json") || names.contains("Transcript.txt"))
+                hasTranscript: names.contains("Transcript.json") || names.contains("Transcript.txt"),
+                summary: names.contains("Summary.txt") ? RecordingSummary.read(in: url) : "")
         }
         .sorted { $0.date > $1.date }
     }
@@ -63,7 +65,9 @@ struct TranscriptionsView: View {
     @Environment(RecorderModel.self) private var model
     @Environment(\.transcribeActions) private var transcribeActions
     @Environment(\.openSettings) private var openSettings
+    @Environment(TranscriptionModel.self) private var transcription
     @State private var list = RecordingsModel()
+    @State private var editing: Recording?
 
     var body: some View {
         Group {
@@ -84,9 +88,10 @@ struct TranscriptionsView: View {
                     Button { transcribeActions.open(recording.url) } label: { RecordingRow(recording: recording) }
                         .buttonStyle(.plain)
                         .contextMenu {
-                            Button(recording.hasTranscript ? "Open / Re-transcribe…" : "Transcribe…") {
+                            Button(recording.hasTranscript ? "Open Transcript" : "Transcribe…") {
                                 transcribeActions.open(recording.url)
                             }
+                            Button("Edit Summary…") { editing = recording }
                             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([recording.url]) }
                         }
                 }
@@ -99,6 +104,12 @@ struct TranscriptionsView: View {
                     .help("Transcribe a recording folder from somewhere else")
                 Button { list.reload(in: model.outputFolder) } label: { Label("Refresh", systemImage: "arrow.clockwise") }
                     .help("Look for new recordings")
+            }
+        }
+        .sheet(item: $editing) { recording in
+            SummarySheet(recording: recording) {
+                list.reload(in: model.outputFolder)
+                if transcription.folder == recording.url { transcription.refreshSummary() }
             }
         }
         .onAppear { list.reload(in: model.outputFolder) }
@@ -117,6 +128,9 @@ private struct RecordingRow: View {
                 Text("\(recording.trackCount) track\(recording.trackCount == 1 ? "" : "s") · "
                      + ByteCountFormatter.string(fromByteCount: recording.bytes, countStyle: .file))
                     .font(.caption).foregroundStyle(.secondary)
+                if !recording.summary.isEmpty {
+                    Text(recording.summary).font(.callout).lineLimit(2).padding(.top, 2)
+                }
             }
             Spacer()
             if recording.hasTranscript {
@@ -129,5 +143,48 @@ private struct RecordingRow: View {
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
+    }
+}
+
+private struct SummarySheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let recording: Recording
+    let onSaved: () -> Void
+    @State private var text = ""
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Summary").font(.headline)
+            Text(recording.title).font(.caption).foregroundStyle(.secondary)
+            TextEditor(text: $text)
+                .font(.body)
+                .frame(height: 80)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+                .onChange(of: text) { _, new in
+                    if new.count > RecordingSummary.maxLength { text = String(new.prefix(RecordingSummary.maxLength)) }
+                }
+            HStack {
+                Text("\(text.count) / \(RecordingSummary.maxLength)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(text.count >= RecordingSummary.maxLength ? Color.red : Color.secondary)
+                if let error { Text(error).font(.caption).foregroundStyle(.red).lineLimit(1) }
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                Button("Save") {
+                    do {
+                        try RecordingSummary.write(text, in: recording.url)
+                        onSaved()
+                        dismiss()
+                    } catch {
+                        self.error = error.localizedDescription
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(16)
+        .frame(width: 420)
+        .onAppear { text = recording.summary }
     }
 }

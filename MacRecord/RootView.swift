@@ -34,8 +34,6 @@ struct RootView: View {
     @State private var page: Page? = .record
     @State private var showPicker = false
     @State private var noModelAlert = false
-    @State private var existingFolder: URL?
-    @State private var askExisting = false
 
     var body: some View {
         NavigationSplitView {
@@ -57,16 +55,6 @@ struct RootView: View {
             if case .success(let url) = result { open(url) }
         }
         .fileDialogDefaultDirectory(model.sessionFolder ?? model.outputFolder)
-        .confirmationDialog("This recording already has a transcript", isPresented: $askExisting, presenting: existingFolder) { url in
-            Button("Open Existing Transcript") {
-                transcription.load(folder: url)
-                openWindow(id: "transcript")
-            }
-            Button("Re-transcribe", role: .destructive) { transcribe(url) }
-            Button("Cancel", role: .cancel) {}
-        } message: { _ in
-            Text("Re-transcribing runs Whisper again and replaces Transcript.txt, including any speaker names you set.")
-        }
         .alert("No transcription model", isPresented: $noModelAlert) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -83,9 +71,11 @@ struct RootView: View {
     }
 
     private func open(_ url: URL) {
-        if TranscriptionModel.hasTranscript(in: url) {
-            existingFolder = url
-            askExisting = true
+        if transcription.isWorking {
+            openWindow(id: "transcript")        // a run is in progress; just bring its window forward
+        } else if TranscriptionModel.hasTranscript(in: url) {
+            transcription.load(folder: url)
+            openWindow(id: "transcript")
         } else {
             transcribe(url)
         }

@@ -5,6 +5,8 @@ struct TranscriptView: View {
     @Environment(WhisperModelStore.self) private var store
     @Environment(\.openWindow) private var openWindow
     @State private var pending: PendingLanguage?
+    @State private var confirmRestart = false
+    @State private var noModelAlert = false
 
     private struct PendingLanguage: Identifiable {
         let track: String
@@ -16,6 +18,10 @@ struct TranscriptView: View {
         VStack(spacing: 0) {
             header
             Divider()
+            if transcription.phase == .finished {
+                SummaryField()
+                Divider()
+            }
             if transcription.phase == .finished, !transcription.speakers.isEmpty {
                 SpeakersPanel()
                 Divider()
@@ -32,6 +38,24 @@ struct TranscriptView: View {
             footer
         }
         .frame(minWidth: 560, minHeight: 720)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: restart) { Label("Restart Transcription", systemImage: "arrow.clockwise") }
+                    .help("Transcribe this recording again")
+                    .disabled(transcription.folder == nil || transcription.isWorking || transcription.phase == .idle)
+            }
+        }
+        .confirmationDialog("Restart the transcription?", isPresented: $confirmRestart) {
+            Button("Restart", role: .destructive, action: startOver)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This replaces the current transcript and resets any speaker names you set.")
+        }
+        .alert("No transcription model", isPresented: $noModelAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Download a Whisper model in Settings (⌘,) first.")
+        }
         .confirmationDialog(
             "Transcribe this track again?", isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } }),
             presenting: pending
@@ -129,6 +153,16 @@ struct TranscriptView: View {
         } else if let name {
             Text(name).font(.caption).foregroundStyle(.secondary)
         }
+    }
+
+    private func restart() {
+        guard store.selectedModelID != nil else { noModelAlert = true; return }
+        confirmRestart = true
+    }
+
+    private func startOver() {
+        guard let folder = transcription.folder, let id = store.selectedModelID else { return }
+        transcription.start(folder: folder, modelID: id, store: store)
     }
 
     private func choose(_ code: String?, for track: TrackProgress) {
@@ -286,5 +320,38 @@ private struct SpeakerNameRow: View {
             // keep in sync when renamed via the transcript popover
             if (new ?? "") != text.trimmingCharacters(in: .whitespacesAndNewlines) { text = new ?? "" }
         }
+    }
+}
+
+/// One-line (wrapping) summary of the recording, max 200 characters; saved to Summary.txt.
+private struct SummaryField: View {
+    @Environment(TranscriptionModel.self) private var transcription
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Summary").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(text.count) / \(RecordingSummary.maxLength)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(text.count >= RecordingSummary.maxLength ? Color.red : Color.secondary)
+            }
+            TextField("Add a short summary…", text: $text, axis: .vertical)
+                .lineLimit(1...3)
+                .textFieldStyle(.roundedBorder)
+                .focused($focused)
+                .onSubmit { transcription.setSummary(text) }
+                .onChange(of: text) { _, new in
+                    if new.count > RecordingSummary.maxLength { text = String(new.prefix(RecordingSummary.maxLength)) }
+                }
+                .onChange(of: focused) { _, isFocused in
+                    if !isFocused { transcription.setSummary(text) }       // commit on focus loss
+                }
+        }
+        .padding(12)
+        .onAppear { text = transcription.summary }
+        .onChange(of: transcription.summary) { _, new in if !focused { text = new } }
     }
 }
