@@ -100,7 +100,7 @@ struct ContentView: View {
                     locked: model.isRecording)
             }
             
-            Section("Microphone") {
+            Section {
                 SourceRow(
                     title: "Microphone", systemImage: "mic",
                     isOn: $model.recordMic,
@@ -112,6 +112,14 @@ struct ContentView: View {
                     ForEach(model.inputDevices) { Text($0.name).tag(Optional($0.id)) }
                 }
                 .disabled(model.isRecording)
+            } header: {
+                HStack {
+                    Text("Microphone")
+                    Spacer()
+                    Button("Refresh") { model.refreshCatalogs() }
+                        .buttonStyle(.link).disabled(model.isRecording)
+                        .help("Look for newly connected input devices")
+                }
             }
 
             Section {
