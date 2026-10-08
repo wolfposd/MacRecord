@@ -1,0 +1,124 @@
+import SwiftUI
+
+struct SettingsView: View {
+    @Environment(WhisperModelStore.self) private var store
+
+    var body: some View {
+        @Bindable var store = store
+        Form {
+            Section {
+                ForEach(WhisperModel.all) { model in
+                    ModelRow(model: model)
+                }
+            } header: {
+                Text("Transcription models")
+            } footer: {
+                Text("Models are downloaded from Hugging Face (argmaxinc/whisperkit-coreml) and run locally on this Mac.")
+            }
+
+            Section {
+                ForEach(store.languages, id: \.self) { code in
+                    HStack {
+                        Text(WhisperModelStore.languageName(code))
+                        Spacer()
+                        Button { store.languages.removeAll { $0 == code } } label: {
+                            Image(systemName: "minus.circle")
+                        }
+                        .buttonStyle(.borderless).help("Remove")
+                    }
+                }
+                if store.languages.isEmpty {
+                    Text("Auto-detect among all languages").foregroundStyle(.secondary)
+                }
+                Menu("Add language…") {
+                    ForEach(WhisperModelStore.allLanguages.filter { !store.languages.contains($0.code) }, id: \.code) { language in
+                        Button(language.name) { store.languages.append(language.code) }
+                    }
+                }
+            } header: {
+                Text("Transcription languages")
+            } footer: {
+                Text("Add one language to use it for everything. Add several (e.g. English and German) and each track is matched to the most likely one of them. Whisper uses one language per track, so speech that mixes languages within a track is not supported.")
+            }
+
+            Section {
+                Toggle("Identify speakers", isOn: $store.identifySpeakers)
+                    .disabled(store.speakerStatus != .installed)
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Speaker model  ").bold() + Text("≈ 33 MB").foregroundStyle(.secondary)
+                        switch store.speakerStatus {
+                        case .failed(let message):
+                            Text(message).font(.caption).foregroundStyle(.red).lineLimit(2)
+                        case .downloading:
+                            ProgressView().controlSize(.small)
+                        default:
+                            Text("Pyannote diarization, runs locally").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                    switch store.speakerStatus {
+                    case .notInstalled, .failed:
+                        Button("Download") { store.downloadSpeakerModel() }
+                    case .downloading:
+                        Button("Cancel", role: .cancel) { store.cancelSpeakerDownload() }
+                    case .installed:
+                        Label("Installed", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        Button(role: .destructive) { store.deleteSpeakerModel() } label: { Image(systemName: "trash") }
+                            .help("Delete model")
+                    }
+                }
+            } header: {
+                Text("Speaker identification")
+            } footer: {
+                Text("Tells the speakers apart within each recorded track (e.g. several people in a Teams call) and labels them Speaker 1, Speaker 2… A track with a single voice keeps its plain name. Transcription becomes somewhat slower.")
+            }
+
+            Section("Default model") {
+                Picker("Use for transcription", selection: $store.selectedModelID) {
+                    Text("None").tag(String?.none)
+                    ForEach(WhisperModel.all.filter { store.status[$0.id] == .installed }) {
+                        Text($0.title).tag(Optional($0.id))
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 520)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct ModelRow: View {
+    @Environment(WhisperModelStore.self) private var store
+    let model: WhisperModel
+
+    var body: some View {
+        let status = store.status[model.id] ?? .notInstalled
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(model.title)  ").bold() + Text(model.approxSize).foregroundStyle(.secondary)
+                switch status {
+                case .failed(let message):
+                    Text(message).font(.caption).foregroundStyle(.red).lineLimit(2)
+                case .downloading(let fraction):
+                    ProgressView(value: fraction)
+                    Text("Downloading… \(Int(fraction * 100))%").font(.caption).foregroundStyle(.secondary)
+                default:
+                    Text(model.note).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            switch status {
+            case .notInstalled, .failed:
+                Button("Download") { store.download(model) }
+            case .downloading:
+                Button("Cancel", role: .cancel) { store.cancel(model) }
+            case .installed:
+                Label("Installed", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                Button(role: .destructive) { store.delete(model) } label: { Image(systemName: "trash") }
+                    .help("Delete model")
+            }
+        }
+    }
+}
