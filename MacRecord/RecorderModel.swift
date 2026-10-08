@@ -118,9 +118,15 @@ final class RecorderModel {
 
     // MARK: Output folder
 
+    /// Access to the storage folder is held for the app's lifetime (not just while recording), because
+    /// listing recordings and opening a recording's subfolder only work while the parent's scope is active.
+    private func beginAccess(to url: URL) {
+        scopedFolder?.stopAccessingSecurityScopedResource()
+        scopedFolder = url.startAccessingSecurityScopedResource() ? url : nil
+    }
+
     func setOutputFolder(_ url: URL) {
-        _ = url.startAccessingSecurityScopedResource()
-        defer { url.stopAccessingSecurityScopedResource() }
+        beginAccess(to: url)
         do {
             let data = try url.bookmarkData(options: .withSecurityScope)
             UserDefaults.standard.set(data, forKey: Self.bookmarkKey)
@@ -134,6 +140,7 @@ final class RecorderModel {
         guard let data = UserDefaults.standard.data(forKey: Self.bookmarkKey) else { return }
         var stale = false
         if let url = try? URL(resolvingBookmarkData: data, options: .withSecurityScope, bookmarkDataIsStale: &stale) {
+            beginAccess(to: url)
             outputFolder = url
         }
     }
@@ -156,11 +163,10 @@ final class RecorderModel {
             }
         }
 
-        guard folder.startAccessingSecurityScopedResource() else {
-            errorMessage = "Cannot access the output folder. Please choose it again."
+        guard scopedFolder != nil else {
+            errorMessage = "Cannot access the storage folder. Please choose it again in Settings."
             return
         }
-        scopedFolder = folder
 
         do {
             let formatter = DateFormatter()
@@ -208,8 +214,6 @@ final class RecorderModel {
                 options: [.userInitiated, .idleSystemSleepDisabled], reason: "Recording audio")
         } catch {
             errorMessage = error.localizedDescription
-            scopedFolder?.stopAccessingSecurityScopedResource()
-            scopedFolder = nil
         }
     }
 
@@ -228,8 +232,6 @@ final class RecorderModel {
         levels = [:]
         if let activity { ProcessInfo.processInfo.endActivity(activity) }
         activity = nil
-        scopedFolder?.stopAccessingSecurityScopedResource()
-        scopedFolder = nil
     }
 
     func revealSession() {

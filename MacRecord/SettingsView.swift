@@ -1,20 +1,23 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     private enum Pane: String, CaseIterable, Identifiable {
+        case general = "General"
         case transcript = "Transcript"
         case ai = "AI"
 
         var id: String { rawValue }
         var icon: String {
             switch self {
+            case .general: "folder"
             case .transcript: "text.bubble"
             case .ai: "sparkles"
             }
         }
     }
 
-    @State private var selection: Pane? = .transcript
+    @State private var selection: Pane? = .general
 
     var body: some View {
         NavigationSplitView {
@@ -23,7 +26,8 @@ struct SettingsView: View {
             }
             .navigationSplitViewColumnWidth(min: 150, ideal: 160, max: 200)
         } detail: {
-            switch selection ?? .transcript {
+            switch selection ?? .general {
+            case .general: GeneralSettingsView()
             case .transcript: TranscriptSettingsView()
             case .ai: AISettingsView()
             }
@@ -33,6 +37,40 @@ struct SettingsView: View {
 }
 
 private enum AIRoute: Hashable { case form(AIProvider, UUID?) }      // nil id = add a new model
+
+private struct GeneralSettingsView: View {
+    @Environment(RecorderModel.self) private var model
+    @State private var picking = false
+
+    var body: some View {
+        Form {
+            Section {
+                HStack {
+                    Image(systemName: "folder")
+                    if let folder = model.outputFolder {
+                        Text(folder.path(percentEncoded: false)).lineLimit(1).truncationMode(.middle)
+                    } else {
+                        Text("No folder chosen").foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Choose…") { picking = true }.disabled(model.isRecording)
+                    if let folder = model.outputFolder {
+                        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([folder]) }
+                    }
+                }
+            } header: {
+                Text("Storage folder")
+            } footer: {
+                Text("Each recording gets its own subfolder here with one audio file per source, plus its transcript.")
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("General")
+        .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
+            if case .success(let url) = result { model.setOutputFolder(url) }
+        }
+    }
+}
 
 private struct AISettingsView: View {
     @Environment(AIConfigStore.self) private var ai

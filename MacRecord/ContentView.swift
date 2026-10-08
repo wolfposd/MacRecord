@@ -1,87 +1,37 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct ContentView: View {
+struct RecordView: View {
     @Environment(RecorderModel.self) private var model
-    @Environment(WhisperModelStore.self) private var models
     @Environment(TranscriptionModel.self) private var transcription
-    @Environment(\.openWindow) private var openWindow
-    private enum FolderPicker { case output, recording }
-    // One importer for both uses: SwiftUI honours only one `.fileImporter` per view.
-    @State private var showPicker = false
-    @State private var pickerMode = FolderPicker.output
-    @State private var noModelAlert = false
-    @State private var existingFolder: URL?
-    @State private var askExisting = false
+    @Environment(\.transcribeActions) private var transcribeActions
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(spacing: 0) {
-            folderBar
+            storageBar
             Divider()
             sourceList
             Divider()
             controlBar
         }
         .frame(minWidth: 380, minHeight: 540)
-        .task { await model.run() }
-        .fileImporter(isPresented: $showPicker, allowedContentTypes: [.folder]) { result in
-            guard case .success(let url) = result else { return }
-            switch pickerMode {
-            case .output:
-                model.setOutputFolder(url)
-            case .recording:
-                if TranscriptionModel.hasTranscript(in: url) {
-                    existingFolder = url
-                    askExisting = true
-                } else {
-                    transcribe(url)
-                }
-            }
-        }
-        .fileDialogDefaultDirectory(model.sessionFolder ?? model.outputFolder)
-        .confirmationDialog("This recording already has a transcript", isPresented: $askExisting, presenting: existingFolder) { url in
-            Button("Open Existing Transcript") {
-                transcription.load(folder: url)
-                openWindow(id: "transcript")
-            }
-            Button("Re-transcribe", role: .destructive) { transcribe(url) }
-            Button("Cancel", role: .cancel) {}
-        } message: { _ in
-            Text("Re-transcribing runs Whisper again and replaces Transcript.txt, including any speaker names you set.")
-        }
-        .alert("No transcription model", isPresented: $noModelAlert) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Download a Whisper model in Settings (⌘,) first.")
-        }
-        .alert("MacRecord", isPresented: Binding(
-            get: { model.errorMessage != nil },
-            set: { if !$0 { model.errorMessage = nil } })
-        ) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(model.errorMessage ?? "")
-        }
     }
 
-    private func transcribe(_ folder: URL) {
-        guard let id = models.selectedModelID else { noModelAlert = true; return }
-        transcription.start(folder: folder, modelID: id, store: models)
-        openWindow(id: "transcript")
-    }
+    // MARK: Storage folder (chosen in Settings)
 
-    // MARK: Folder
-
-    private var folderBar: some View {
+    private var storageBar: some View {
         HStack {
             Image(systemName: "folder")
             if let folder = model.outputFolder {
                 Text(folder.path(percentEncoded: false)).lineLimit(1).truncationMode(.middle)
+                    .foregroundStyle(.secondary)
             } else {
-                Text("Choose a folder to record into").foregroundStyle(.secondary)
+                Text("No storage folder set").foregroundStyle(.secondary)
+                Spacer()
+                Button("Open Settings…") { openSettings() }
             }
-            Spacer()
-            Button("Choose…") { pickerMode = .output; showPicker = true }.disabled(model.isRecording)
+            Spacer(minLength: 0)
         }
         .padding(12)
     }
@@ -186,8 +136,7 @@ struct ContentView: View {
             }
             Spacer()
             Button {
-                pickerMode = .recording
-                showPicker = true
+                transcribeActions.chooseFolder()
             } label: {
                 Label("Transcribe…", systemImage: "text.bubble")
             }

@@ -10,7 +10,7 @@ struct MacRecordApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
                 .environment(model)
                 .environment(models)
                 .environment(transcription)
@@ -32,6 +32,7 @@ struct MacRecordApp: App {
 
         Settings {
             SettingsView()
+                .environment(model)
                 .environment(models)
                 .environment(ai)
         }
