@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import Security
 
 enum AIProvider: String, CaseIterable, Identifiable, Codable {
     case claude, custom
@@ -38,7 +37,7 @@ struct CustomAIConfig: Equatable {
 }
 
 /// The user's AI models and which one is used for transcript processing.
-/// API keys live in the Keychain; everything else in UserDefaults.
+/// API keys live in a local file (see `KeyFile`); everything else in UserDefaults.
 @MainActor @Observable
 final class AIConfigStore {
     private(set) var models: [AIModel] = []
@@ -69,7 +68,7 @@ final class AIConfigStore {
 
     // MARK: Models
 
-    func apiKey(for model: AIModel) -> String { Keychain.read(account(model.id)) ?? "" }
+    func apiKey(for model: AIModel) -> String { KeyFile.read(account(model.id)) ?? "" }
 
     nonisolated static let anthropicURL = "https://api.anthropic.com"
     nonisolated static let defaultClaudeModel = "claude-sonnet-5-5"
@@ -91,13 +90,13 @@ final class AIConfigStore {
         } else {
             models.append(model)
         }
-        Keychain.write(key, account: account(model.id))
+        KeyFile.write(key, account: account(model.id))
         selectedID = model.id
         persist()
     }
 
     func remove(_ model: AIModel) {
-        Keychain.delete(account(model.id))
+        KeyFile.delete(account(model.id))
         models.removeAll { $0.id == model.id }
         if selectedID == model.id { selectedID = nil }
         persist()
@@ -106,34 +105,47 @@ final class AIConfigStore {
     private func account(_ id: UUID) -> String { "aiKey-\(id.uuidString)" }
 }
 
-private enum Keychain {
-    private static let service = Bundle.main.bundleIdentifier ?? "MacRecord"
-
-    private static func query(_ account: String) -> [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword,
-         kSecAttrService as String: service,
-         kSecAttrAccount as String: account]
+/// API keys in a small JSON file inside the app's sandbox container (`Application Support/MacRecord/ai-keys.json`).
+/// Deliberately not the Keychain: ad-hoc signed builds make macOS ask for permission after every rebuild.
+/// The file is readable only by the current user and excluded from backups, but the keys are not encrypted.
+private enum KeyFile {
+    private static var url: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("MacRecord/ai-keys.json")
     }
 
-    static func read(_ account: String) -> String? {
-        var query = query(account)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+    private static func load() -> [String: String] {
+        guard let data = try? Data(contentsOf: url) else { return [:] }
+        return (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
     }
+
+    private static func store(_ keys: [String: String]) {
+        let fm = FileManager.default
+        var file = url
+        do {
+            try fm.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true,
+                                   attributes: [.posixPermissions: 0o700])
+            try JSONEncoder().encode(keys).write(to: file, options: .atomic)
+            try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try file.setResourceValues(values)
+        } catch {
+            NSLog("MacRecord: could not save AI keys: \(error.localizedDescription)")   // never log the keys themselves
+        }
+    }
+
+    static func read(_ account: String) -> String? { load()[account] }
 
     static func write(_ value: String, account: String) {
-        delete(account)
-        guard !value.isEmpty else { return }
-        var item = query(account)
-        item[kSecValueData as String] = Data(value.utf8)
-        SecItemAdd(item as CFDictionary, nil)
+        var keys = load()
+        if value.isEmpty { keys[account] = nil } else { keys[account] = value }
+        store(keys)
     }
 
     static func delete(_ account: String) {
-        SecItemDelete(query(account) as CFDictionary)
+        var keys = load()
+        guard keys.removeValue(forKey: account) != nil else { return }
+        store(keys)
     }
 }

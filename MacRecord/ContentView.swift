@@ -22,7 +22,7 @@ struct ContentView: View {
             Divider()
             controlBar
         }
-        .frame(minWidth: 560, minHeight: 540)
+        .frame(minWidth: 380, minHeight: 540)
         .task { await model.run() }
         .fileImporter(isPresented: $showPicker, allowedContentTypes: [.folder]) { result in
             guard case .success(let url) = result else { return }

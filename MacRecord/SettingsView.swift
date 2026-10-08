@@ -168,8 +168,8 @@ private struct ModelFormView: View {
                     .autocorrectionDisabled()
             } footer: {
                 Text(provider == .claude
-                     ? "Uses the Anthropic API. The API key is stored in your Keychain."
-                     : "Must be an OpenAI-compatible endpoint (…/chat/completions). The API key is stored in your Keychain and may be left empty for local servers.")
+                     ? "Uses the Anthropic API."
+                     : "Must be an OpenAI-compatible endpoint (…/chat/completions). Leave empty for local servers.")
             }
 
             Section {
