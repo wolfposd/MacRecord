@@ -1,44 +1,9 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct SettingsView: View {
-    private enum Pane: String, CaseIterable, Identifiable {
-        case general = "General"
-        case transcript = "Transcript"
-        case ai = "AI"
-
-        var id: String { rawValue }
-        var icon: String {
-            switch self {
-            case .general: "folder"
-            case .transcript: "text.bubble"
-            case .ai: "sparkles"
-            }
-        }
-    }
-
-    @State private var selection: Pane? = .general
-
-    var body: some View {
-        NavigationSplitView {
-            List(Pane.allCases, selection: $selection) { pane in
-                Label(pane.rawValue, systemImage: pane.icon).tag(pane)
-            }
-            .navigationSplitViewColumnWidth(min: 150, ideal: 160, max: 200)
-        } detail: {
-            switch selection ?? .general {
-            case .general: GeneralSettingsView()
-            case .transcript: TranscriptSettingsView()
-            case .ai: AISettingsView()
-            }
-        }
-        .frame(width: 780, height: 620)
-    }
-}
-
 private enum AIRoute: Hashable { case form(AIProvider, UUID?) }      // nil id = add a new model
 
-private struct GeneralSettingsView: View {
+struct StorageSettingsView: View {
     @Environment(RecorderModel.self) private var model
     @State private var picking = false
 
@@ -65,14 +30,14 @@ private struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .navigationTitle("General")
+        .navigationTitle("Storage")
         .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
             if case .success(let url) = result { model.setOutputFolder(url) }
         }
     }
 }
 
-private struct AISettingsView: View {
+struct AISettingsView: View {
     @Environment(AIConfigStore.self) private var ai
     @State private var path: [AIRoute] = []
 
@@ -249,7 +214,26 @@ private struct ModelFormView: View {
     }
 }
 
-private struct TranscriptSettingsView: View {
+struct RecordingSettingsView: View {
+    @Environment(ConversionModel.self) private var conversion
+
+    var body: some View {
+        @Bindable var conversion = conversion
+        Form {
+            Section {
+                Toggle("Convert to AAC when finished", isOn: $conversion.convertToAAC)
+            } header: {
+                Text("After recording")
+            } footer: {
+                Text("Turns each recorded track into a compact .m4a (about 30× smaller; roughly 96 kbps stereo or 48 kbps mono). The original lossless .caf is deleted only after the conversion succeeded and was checked. AAC is lossy.")
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Recording")
+    }
+}
+
+struct TranscriptSettingsView: View {
     @Environment(WhisperModelStore.self) private var store
 
     var body: some View {

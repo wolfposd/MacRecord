@@ -4,8 +4,9 @@ import UniformTypeIdentifiers
 struct RecordView: View {
     @Environment(RecorderModel.self) private var model
     @Environment(TranscriptionModel.self) private var transcription
+    @Environment(ConversionModel.self) private var conversion
     @Environment(\.transcribeActions) private var transcribeActions
-    @Environment(\.openSettings) private var openSettings
+    @Environment(AppNavigation.self) private var nav
 
     var body: some View {
         VStack(spacing: 0) {
@@ -13,6 +14,7 @@ struct RecordView: View {
             Divider()
             sourceList
             Divider()
+            conversionBar
             controlBar
         }
         .frame(minWidth: 380, minHeight: 540)
@@ -29,7 +31,7 @@ struct RecordView: View {
             } else {
                 Text("No storage folder set").foregroundStyle(.secondary)
                 Spacer()
-                Button("Open Settings…") { openSettings() }
+                Button("Open Settings…") { nav.selection = .storage }
             }
             Spacer(minLength: 0)
         }
@@ -109,6 +111,36 @@ struct RecordView: View {
 
     // MARK: Controls
 
+    @ViewBuilder
+    private var conversionBar: some View {
+        if conversion.isRunning {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    ProgressView(value: conversion.fraction)
+                    Button("Cancel") { conversion.cancel() }
+                }
+                Text("Converting to AAC… \(Int(conversion.fraction * 100)) % — track \(conversion.trackIndex) of \(conversion.trackCount)"
+                     + (conversion.currentName.isEmpty ? "" : " (\(conversion.currentName))"))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .padding(12)
+            Divider()
+        } else if conversion.lastResult != nil || !conversion.errors.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                if let result = conversion.lastResult {
+                    Label(result, systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                }
+                ForEach(conversion.errors, id: \.self) { error in
+                    Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                }
+            }
+            .font(.caption)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Divider()
+        }
+    }
+
     private var controlBar: some View {
         HStack(spacing: 16) {
             Button {
@@ -122,7 +154,7 @@ struct RecordView: View {
             .buttonStyle(.borderedProminent)
             .tint(.red)
             .keyboardShortcut(.space, modifiers: [])
-            .disabled(!model.canRecord)
+            .disabled(!model.canRecord || conversion.isRunning)
 
             VStack(alignment: .leading) {
                 Text(Duration.seconds(model.elapsed).formatted(.time(pattern: .hourMinuteSecond)))
@@ -141,7 +173,7 @@ struct RecordView: View {
                 Label("Transcribe…", systemImage: "text.bubble")
             }
             .help("Choose a recording folder to transcribe; Transcript.txt is written into it")
-            .disabled(model.isRecording || transcription.isWorking)
+            .disabled(model.isRecording || transcription.isWorking || conversion.isRunning)
             if model.sessionFolder != nil {
                 Button("Reveal in Finder") { model.revealSession() }
             }

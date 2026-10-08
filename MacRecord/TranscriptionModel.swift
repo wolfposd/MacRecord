@@ -109,7 +109,7 @@ final class TranscriptionModel {
             return
         }
         guard !inputs.isEmpty else {
-            phase = .failed("No .caf recordings found in this folder.")
+            phase = .failed("No audio recordings (.caf or .m4a) found in this folder.")
             return
         }
         tracks = inputs.map { TrackProgress(id: $0.url.lastPathComponent, source: $0.source) }
@@ -328,9 +328,9 @@ final class TranscriptionModel {
                 if !found.isEmpty { return found }
             }
         }
-        // No (usable) session.json: transcribe every .caf, all starting at 0.
+        // No (usable) session.json: transcribe every audio file (.caf/.m4a), all starting at 0.
         let files = try fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
-            .filter { $0.pathExtension.lowercased() == "caf" }
+            .filter { ["caf", "m4a"].contains($0.pathExtension.lowercased()) && !$0.lastPathComponent.hasPrefix(".") }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
         return files.map { Input(url: $0, source: $0.deletingPathExtension().lastPathComponent, offset: 0) }
     }

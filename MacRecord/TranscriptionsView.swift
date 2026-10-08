@@ -33,7 +33,7 @@ final class RecordingsModel {
         }
     }
 
-    /// Immediate subfolders that contain audio (`.caf`) or a `session.json`, newest first.
+    /// Immediate subfolders that contain audio (`.caf`/`.m4a`) or a `session.json`, newest first.
     private nonisolated static func scan(_ folder: URL) -> [Recording] {
         let fm = FileManager.default
         let keys: [URLResourceKey] = [.isDirectoryKey, .creationDateKey, .contentModificationDateKey]
@@ -42,7 +42,7 @@ final class RecordingsModel {
             guard (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true,
                   let files = try? fm.contentsOfDirectory(
                     at: url, includingPropertiesForKeys: [.fileSizeKey]) else { return nil }
-            let audio = files.filter { $0.pathExtension.lowercased() == "caf" }
+            let audio = files.filter { ["caf", "m4a"].contains($0.pathExtension.lowercased()) && !$0.lastPathComponent.hasPrefix(".") }
             let hasSession = files.contains { $0.lastPathComponent == "session.json" }
             guard !audio.isEmpty || hasSession else { return nil }
             let bytes = audio.reduce(Int64(0)) {
@@ -64,8 +64,9 @@ final class RecordingsModel {
 struct TranscriptionsView: View {
     @Environment(RecorderModel.self) private var model
     @Environment(\.transcribeActions) private var transcribeActions
-    @Environment(\.openSettings) private var openSettings
+    @Environment(AppNavigation.self) private var nav
     @Environment(TranscriptionModel.self) private var transcription
+    @Environment(ConversionModel.self) private var conversion
     @State private var list = RecordingsModel()
     @State private var editing: Recording?
 
@@ -77,7 +78,7 @@ struct TranscriptionsView: View {
                 } description: {
                     Text("Choose the folder your recordings are stored in.")
                 } actions: {
-                    Button("Open Settings…") { openSettings() }
+                    Button("Open Settings…") { nav.selection = .storage }
                 }
             } else if list.recordings.isEmpty {
                 ContentUnavailableView(
@@ -114,6 +115,7 @@ struct TranscriptionsView: View {
         }
         .onAppear { list.reload(in: model.outputFolder) }
         .onChange(of: model.outputFolder) { list.reload(in: model.outputFolder) }
+        .onChange(of: conversion.finishedRuns) { list.reload(in: model.outputFolder) }
         .onChange(of: model.isRecording) { if !model.isRecording { list.reload(in: model.outputFolder) } }
     }
 }

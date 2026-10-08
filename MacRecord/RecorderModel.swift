@@ -38,6 +38,8 @@ final class RecorderModel {
     // Output
     private(set) var outputFolder: URL?
     private(set) var sessionFolder: URL?
+    /// Every audio file the last recording produced (one per source and sample-rate segment).
+    private(set) var lastTrackFiles: [URL] = []
 
     // Run state
     private(set) var isRecording = false
@@ -228,6 +230,7 @@ final class RecorderModel {
         }
         writeSession()
 
+        lastTrackFiles = active.flatMap { $0.capture.segments.map(\.url) }
         active = []
         levels = [:]
         if let activity { ProcessInfo.processInfo.endActivity(activity) }

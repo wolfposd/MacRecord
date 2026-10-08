@@ -18,38 +18,77 @@ extension EnvironmentValues {
     }
 }
 
+/// Which page the main window shows; shared so other views and the ⌘, command can navigate.
+@MainActor @Observable
+final class AppNavigation {
+    enum Page: String, Identifiable {
+        case record = "Record", transcriptions = "Transcriptions"           // section "General"
+        case storage = "Storage", recording = "Recording", transcript = "Transcript", ai = "AI"   // section "Settings"
+
+        var id: String { rawValue }
+        var icon: String {
+            switch self {
+            case .record: "record.circle"
+            case .transcriptions: "text.bubble"
+            case .storage: "folder"
+            case .recording: "waveform"
+            case .transcript: "waveform.and.magnifyingglass"
+            case .ai: "sparkles"
+            }
+        }
+    }
+
+    var selection: Page? = .record
+}
+
 struct RootView: View {
     @Environment(RecorderModel.self) private var model
     @Environment(WhisperModelStore.self) private var models
     @Environment(TranscriptionModel.self) private var transcription
+    @Environment(ConversionModel.self) private var conversion
     @Environment(\.openWindow) private var openWindow
 
-    private enum Page: String, CaseIterable, Identifiable {
-        case record = "Record"
-        case transcriptions = "Transcriptions"
-        var id: String { rawValue }
-        var icon: String { self == .record ? "record.circle" : "text.bubble" }
-    }
+    @Environment(AppNavigation.self) private var nav
 
-    @State private var page: Page? = .record
     @State private var showPicker = false
     @State private var noModelAlert = false
 
     var body: some View {
-        NavigationSplitView {
-            List(Page.allCases, selection: $page) { page in
-                Label(page.rawValue, systemImage: page.icon).tag(page)
+        @Bindable var nav = nav
+        return NavigationSplitView {
+            List(selection: $nav.selection) {
+                Section("General") {
+                    row(.record)
+                    row(.transcriptions)
+                }
+                Section("Settings") {
+                    row(.storage)
+                    row(.recording)
+                    row(.transcript)
+                    row(.ai)
+                }
             }
             .navigationSplitViewColumnWidth(min: 150, ideal: 170, max: 220)
         } detail: {
-            switch page ?? .record {
+            switch nav.selection ?? .record {
             case .record: RecordView()
             case .transcriptions: TranscriptionsView()
+            case .storage: StorageSettingsView()
+            case .recording: RecordingSettingsView()
+            case .transcript: TranscriptSettingsView()
+            case .ai: AISettingsView()
             }
         }
         .frame(minWidth: 420, minHeight: 540)
         .environment(\.transcribeActions, TranscribeActions(open: open, chooseFolder: { showPicker = true }))
         .task { await model.run() }
+        .onChange(of: model.isRecording) { wasRecording, isRecording in
+            if isRecording {
+                conversion.clearResult()
+            } else if wasRecording, conversion.convertToAAC, let folder = model.sessionFolder {
+                conversion.start(folder: folder, files: model.lastTrackFiles)
+            }
+        }
         // One importer for the whole window: SwiftUI honours only one `.fileImporter` per view.
         .fileImporter(isPresented: $showPicker, allowedContentTypes: [.folder]) { result in
             if case .success(let url) = result { open(url) }
@@ -70,7 +109,12 @@ struct RootView: View {
         }
     }
 
+    private func row(_ page: AppNavigation.Page) -> some View {
+        Label(page.rawValue, systemImage: page.icon).tag(page)
+    }
+
     private func open(_ url: URL) {
+        if conversion.isRunning, conversion.activeFolder == url { return }     // audio is still being converted
         if transcription.isWorking {
             openWindow(id: "transcript")        // a run is in progress; just bring its window forward
         } else if TranscriptionModel.hasTranscript(in: url) {
