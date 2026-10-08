@@ -25,10 +25,15 @@ struct CustomAIConfig: Equatable {
     var modelName = ""
     var apiKey = ""
 
-    var isValid: Bool {
-        !name.trimmingCharacters(in: .whitespaces).isEmpty
-            && !modelName.trimmingCharacters(in: .whitespaces).isEmpty
-            && URL(string: baseURL.trimmingCharacters(in: .whitespaces))?.host != nil
+    func isValid(for provider: AIProvider) -> Bool {
+        guard !modelName.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
+        switch provider {
+        case .claude:
+            return !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .custom:
+            return !name.trimmingCharacters(in: .whitespaces).isEmpty
+                && URL(string: baseURL.trimmingCharacters(in: .whitespaces))?.host != nil
+        }
     }
 }
 
@@ -66,14 +71,20 @@ final class AIConfigStore {
 
     func apiKey(for model: AIModel) -> String { Keychain.read(account(model.id)) ?? "" }
 
-    /// Adds a new custom model (`id == nil`) or updates an existing one, and selects it.
-    func saveCustom(_ config: CustomAIConfig, id: UUID? = nil) {
-        let name = config.name.trimmingCharacters(in: .whitespaces)
-        let baseURL = config.baseURL.trimmingCharacters(in: .whitespaces)
+    nonisolated static let anthropicURL = "https://api.anthropic.com"
+    nonisolated static let defaultClaudeModel = "claude-sonnet-5-5"
+
+    /// Adds a new model (`id == nil`) or updates an existing one, and selects it.
+    /// Claude is a single entry with a fixed name and endpoint; only key and model name are editable.
+    func save(_ config: CustomAIConfig, provider: AIProvider, id: UUID? = nil) {
+        var id = id
+        if provider == .claude { id = id ?? models.first { $0.provider == .claude }?.id }
+        let name = provider == .claude ? AIProvider.claude.title : config.name.trimmingCharacters(in: .whitespaces)
+        let baseURL = provider == .claude ? Self.anthropicURL : config.baseURL.trimmingCharacters(in: .whitespaces)
         let modelName = config.modelName.trimmingCharacters(in: .whitespaces)
         let key = config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        var model = AIModel(provider: .custom, name: name, baseURL: baseURL, modelName: modelName)
+        var model = AIModel(provider: provider, name: name, baseURL: baseURL, modelName: modelName)
         if let id, let index = models.firstIndex(where: { $0.id == id }) {
             model.id = id
             models[index] = model
@@ -81,18 +92,6 @@ final class AIConfigStore {
             models.append(model)
         }
         Keychain.write(key, account: account(model.id))
-        selectedID = model.id
-        persist()
-    }
-
-    /// Adds the built-in Anthropic Claude entry once.
-    func addClaude() {
-        if let existing = models.first(where: { $0.provider == .claude }) {
-            selectedID = existing.id
-            return
-        }
-        let model = AIModel(provider: .claude, name: AIProvider.claude.title)
-        models.append(model)
         selectedID = model.id
         persist()
     }

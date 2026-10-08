@@ -3,6 +3,7 @@ import SwiftUI
 struct TranscriptView: View {
     @Environment(TranscriptionModel.self) private var transcription
     @Environment(WhisperModelStore.self) private var store
+    @Environment(\.openWindow) private var openWindow
     @State private var pending: PendingLanguage?
 
     private struct PendingLanguage: Identifiable {
@@ -180,6 +181,9 @@ struct TranscriptView: View {
             if transcription.isWorking {
                 Button("Cancel") { transcription.cancel() }
             }
+            Button { openWindow(id: "ai-chat") } label: { Label("AI", systemImage: "sparkles") }
+                .disabled(transcription.phase != .finished)
+                .help("Chat with your selected AI model about this transcript")
             Button("Copy") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(transcription.transcriptText, forType: .string)

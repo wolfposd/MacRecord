@@ -32,7 +32,7 @@ struct SettingsView: View {
     }
 }
 
-private enum AIRoute: Hashable { case custom(UUID?) }      // nil = add a new custom model
+private enum AIRoute: Hashable { case form(AIProvider, UUID?) }      // nil id = add a new model
 
 private struct AISettingsView: View {
     @Environment(AIConfigStore.self) private var ai
@@ -49,13 +49,11 @@ private struct AISettingsView: View {
                             ForEach(ai.models) { model in
                                 ProviderBadge(
                                     title: model.name,
-                                    subtitle: model.provider == .custom ? model.modelName : nil,
+                                    subtitle: model.modelName,
                                     isSelected: ai.selectedID == model.id
                                 ) { ai.selectedID = model.id }
                                 .contextMenu {
-                                    if model.provider == .custom {
-                                        Button("Edit…") { path.append(.custom(model.id)) }
-                                    }
+                                    Button("Edit…") { path.append(.form(model.provider, model.id)) }
                                     Button("Remove", role: .destructive) { ai.remove(model) }
                                 }
                             }
@@ -72,10 +70,9 @@ private struct AISettingsView: View {
                     HStack(spacing: 10) {
                         ForEach(AIProvider.allCases) { provider in
                             ProviderBadge(title: provider.title, subtitle: nil, isSelected: false) {
-                                switch provider {
-                                case .claude: ai.addClaude()
-                                case .custom: path.append(.custom(nil))
-                                }
+                                // Claude is a single entry: reopen it for editing if it already exists.
+                                let existing = provider == .claude ? ai.models.first { $0.provider == .claude }?.id : nil
+                                path.append(.form(provider, existing))
                             }
                         }
                         Spacer()
@@ -89,7 +86,7 @@ private struct AISettingsView: View {
             .navigationTitle("AI")
             .navigationDestination(for: AIRoute.self) { route in
                 switch route {
-                case .custom(let id): CustomAISettingsView(editing: id)
+                case .form(let provider, let id): ModelFormView(provider: provider, editing: id)
                 }
             }
         }
@@ -151,23 +148,28 @@ private struct ProviderBadge: View {
     }
 }
 
-private struct CustomAISettingsView: View {
+private struct ModelFormView: View {
     @Environment(AIConfigStore.self) private var ai
     @Environment(\.dismiss) private var dismiss
+    let provider: AIProvider
     let editing: UUID?
     @State private var config = CustomAIConfig()
 
     var body: some View {
         Form {
             Section {
-                TextField("Name", text: $config.name, prompt: Text("My LLM"))
-                TextField("Base URL", text: $config.baseURL, prompt: Text("https://api.example.com/v1"))
-                    .autocorrectionDisabled()
-                TextField("API key", text: $config.apiKey)
+                if provider == .custom {
+                    TextField("Name", text: $config.name, prompt: Text("My LLM"))
+                    TextField("Base URL", text: $config.baseURL, prompt: Text("https://api.example.com/v1"))
+                        .autocorrectionDisabled()
+                }
+                SecureField("API key", text: $config.apiKey)
                 TextField("Model name", text: $config.modelName, prompt: Text("model-id"))
                     .autocorrectionDisabled()
             } footer: {
-                Text("The API key is stored in your Keychain.")
+                Text(provider == .claude
+                     ? "Uses the Anthropic API. The API key is stored in your Keychain."
+                     : "Must be an OpenAI-compatible endpoint (…/chat/completions). The API key is stored in your Keychain and may be left empty for local servers.")
             }
 
             Section {
@@ -180,21 +182,31 @@ private struct CustomAISettingsView: View {
                     }
                     Spacer()
                     Button("Save") {
-                        ai.saveCustom(config, id: editing)
+                        ai.save(config, provider: provider, id: editing)
                         dismiss()
                     }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(!config.isValid)
+                    .disabled(!config.isValid(for: provider))
                 }
             }
         }
         .formStyle(.grouped)
-        .navigationTitle(editing == nil ? "Add custom model" : "Edit model")
+        .navigationTitle(title)
         .onAppear {
             if let model = ai.models.first(where: { $0.id == editing }) {
                 config = CustomAIConfig(
                     name: model.name, baseURL: model.baseURL, modelName: model.modelName, apiKey: ai.apiKey(for: model))
+            } else if provider == .claude {
+                config.modelName = AIConfigStore.defaultClaudeModel
             }
+        }
+    }
+
+    private var title: String {
+        switch (provider, editing) {
+        case (.claude, _): "Anthropic Claude"
+        case (.custom, nil): "Add custom model"
+        case (.custom, _): "Edit model"
         }
     }
 }

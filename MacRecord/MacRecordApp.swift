@@ -6,6 +6,7 @@ struct MacRecordApp: App {
     @State private var models = WhisperModelStore()
     @State private var transcription = TranscriptionModel()
     @State private var ai = AIConfigStore()
+    @State private var chat = AIChatModel()
 
     var body: some Scene {
         WindowGroup {
@@ -20,6 +21,13 @@ struct MacRecordApp: App {
             TranscriptView()
                 .environment(transcription)
                 .environment(models)
+        }
+
+        Window("AI Chat", id: "ai-chat") {
+            AIChatView()
+                .environment(ai)
+                .environment(transcription)
+                .environment(chat)
         }
 
         Settings {
