@@ -18,6 +18,7 @@ struct MacRecordApp: App {
         Window("Transcript", id: "transcript") {
             TranscriptView()
                 .environment(transcription)
+                .environment(models)
         }
 
         Settings {

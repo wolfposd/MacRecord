@@ -1,6 +1,45 @@
 import SwiftUI
 
 struct SettingsView: View {
+    private enum Pane: String, CaseIterable, Identifiable {
+        case transcript = "Transcript"
+        case ai = "AI"
+
+        var id: String { rawValue }
+        var icon: String {
+            switch self {
+            case .transcript: "text.bubble"
+            case .ai: "sparkles"
+            }
+        }
+    }
+
+    @State private var selection: Pane? = .transcript
+
+    var body: some View {
+        NavigationSplitView {
+            List(Pane.allCases, selection: $selection) { pane in
+                Label(pane.rawValue, systemImage: pane.icon).tag(pane)
+            }
+            .navigationSplitViewColumnWidth(min: 150, ideal: 160, max: 200)
+        } detail: {
+            switch selection ?? .transcript {
+            case .transcript: TranscriptSettingsView()
+            case .ai: AISettingsView()
+            }
+        }
+        .frame(width: 780, height: 620)
+    }
+}
+
+private struct AISettingsView: View {
+    var body: some View {
+        Color.clear     // intentionally blank for now
+            .navigationTitle("AI")
+    }
+}
+
+private struct TranscriptSettingsView: View {
     @Environment(WhisperModelStore.self) private var store
 
     var body: some View {
@@ -84,8 +123,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520)
-        .fixedSize(horizontal: false, vertical: true)
+        .navigationTitle("Transcript")
     }
 }
 

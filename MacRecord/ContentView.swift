@@ -11,6 +11,8 @@ struct ContentView: View {
     @State private var showPicker = false
     @State private var pickerMode = FolderPicker.output
     @State private var noModelAlert = false
+    @State private var existingFolder: URL?
+    @State private var askExisting = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,12 +30,25 @@ struct ContentView: View {
             case .output:
                 model.setOutputFolder(url)
             case .recording:
-                guard let id = models.selectedModelID else { return }
-                transcription.start(folder: url, modelID: id, store: models)
-                openWindow(id: "transcript")
+                if TranscriptionModel.hasTranscript(in: url) {
+                    existingFolder = url
+                    askExisting = true
+                } else {
+                    transcribe(url)
+                }
             }
         }
         .fileDialogDefaultDirectory(model.sessionFolder ?? model.outputFolder)
+        .confirmationDialog("This recording already has a transcript", isPresented: $askExisting, presenting: existingFolder) { url in
+            Button("Open Existing Transcript") {
+                transcription.load(folder: url)
+                openWindow(id: "transcript")
+            }
+            Button("Re-transcribe", role: .destructive) { transcribe(url) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Re-transcribing runs Whisper again and replaces Transcript.txt, including any speaker names you set.")
+        }
         .alert("No transcription model", isPresented: $noModelAlert) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -47,6 +62,12 @@ struct ContentView: View {
         } message: {
             Text(model.errorMessage ?? "")
         }
+    }
+
+    private func transcribe(_ folder: URL) {
+        guard let id = models.selectedModelID else { noModelAlert = true; return }
+        transcription.start(folder: folder, modelID: id, store: models)
+        openWindow(id: "transcript")
     }
 
     // MARK: Folder
@@ -157,7 +178,8 @@ struct ContentView: View {
             }
             Spacer()
             Button {
-                if models.selectedModelID == nil { noModelAlert = true } else { pickerMode = .recording; showPicker = true }
+                pickerMode = .recording
+                showPicker = true
             } label: {
                 Label("Transcribe…", systemImage: "text.bubble")
             }

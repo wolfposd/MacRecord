@@ -2,11 +2,23 @@ import SwiftUI
 
 struct TranscriptView: View {
     @Environment(TranscriptionModel.self) private var transcription
+    @Environment(WhisperModelStore.self) private var store
+    @State private var pending: PendingLanguage?
+
+    private struct PendingLanguage: Identifiable {
+        let track: String
+        let language: String?
+        var id: String { track }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
+            if transcription.phase == .finished, !transcription.speakers.isEmpty {
+                SpeakersPanel()
+                Divider()
+            }
             if transcription.entries.isEmpty {
                 ContentUnavailableView(
                     placeholderTitle, systemImage: "text.bubble",
@@ -19,6 +31,17 @@ struct TranscriptView: View {
             footer
         }
         .frame(minWidth: 560, minHeight: 420)
+        .confirmationDialog(
+            "Transcribe this track again?", isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } }),
+            presenting: pending
+        ) { item in
+            Button("Re-transcribe", role: .destructive) {
+                transcription.retranscribe(track: item.track, language: item.language, store: store)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("The speakers of this track are detected again, so the names you gave them will be reset.")
+        }
     }
 
     private var placeholderTitle: String {
@@ -59,10 +82,7 @@ struct TranscriptView: View {
                         case .failed: Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
                         }
                         Text(track.source).font(.callout)
-                        if let language = track.language {
-                            Text(WhisperModelStore.languageName(language))
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
+                        languageControl(for: track)
                         if let stage = track.stage {
                             Text(stage).font(.caption).foregroundStyle(.secondary)
                         }
@@ -81,18 +101,54 @@ struct TranscriptView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// Detected/used language. After a finished run it is a menu that re-transcribes just this track.
+    @ViewBuilder
+    private func languageControl(for track: TrackProgress) -> some View {
+        let name = track.language.map(WhisperModelStore.languageName)
+        if transcription.phase == .finished, !transcription.isWorking, track.state != .running {
+            Menu {
+                if !store.languages.isEmpty {
+                    ForEach(store.languages, id: \.self) { code in
+                        Button(WhisperModelStore.languageName(code)) { choose(code, for: track) }
+                    }
+                    Divider()
+                }
+                Button("Auto-detect") { choose(nil, for: track) }
+                Menu("All languages") {
+                    ForEach(WhisperModelStore.allLanguages, id: \.code) { language in
+                        Button(language.name) { choose(language.code, for: track) }
+                    }
+                }
+            } label: {
+                Text(name ?? "Language")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Wrong language? Pick another one to transcribe this track again")
+        } else if let name {
+            Text(name).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func choose(_ code: String?, for track: TrackProgress) {
+        guard code != track.language || code == nil else { return }
+        if transcription.hasCustomNames(track: track.id) {
+            pending = PendingLanguage(track: track.id, language: code)    // confirm: names would be lost
+        } else {
+            transcription.retranscribe(track: track.id, language: code, store: store)
+        }
+    }
+
     private var transcript: some View {
-        let sources = Array(Set(transcription.entries.map(\.source))).sorted()
+        let labels = Array(Set(transcription.entries.map { transcription.label(for: $0.speakerKey) })).sorted()
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 8) {
                 ForEach(transcription.entries) { entry in
+                    let label = transcription.label(for: entry.speakerKey)
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Text(TranscriptionModel.timestamp(entry.time))
                             .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
-                        Text(entry.source)
-                            .font(.caption.bold())
-                            .foregroundStyle(color(for: entry.source, in: sources))
-                            .frame(width: 160, alignment: .leading).lineLimit(1)
+                        SpeakerLabel(key: entry.speakerKey, label: label, color: color(for: label, in: labels))
                         Text(entry.text).textSelection(.enabled)
                     }
                 }
@@ -112,6 +168,9 @@ struct TranscriptView: View {
             switch transcription.phase {
             case .finished:
                 Label("Saved Transcript.txt", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+            case _ where transcription.saveError != nil:
+                Label(transcription.saveError ?? "", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red).lineLimit(1)
             case .failed(let message) where !transcription.entries.isEmpty:
                 Label(message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red).lineLimit(1)
             default:
@@ -122,16 +181,106 @@ struct TranscriptView: View {
                 Button("Cancel") { transcription.cancel() }
             }
             Button("Copy") {
-                let text = transcription.entries
-                    .map { "[\(TranscriptionModel.timestamp($0.time))] \($0.source): \($0.text)" }
-                    .joined(separator: "\n")
                 NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(text, forType: .string)
+                NSPasteboard.general.setString(transcription.transcriptText, forType: .string)
             }.disabled(transcription.entries.isEmpty)
             Button("Show in Finder") {
                 if let file = transcription.outputFile { NSWorkspace.shared.activateFileViewerSelecting([file]) }
             }.disabled(transcription.outputFile == nil)
         }
         .padding(12)
+    }
+}
+
+/// Speaker name shown in front of each line; click to rename that speaker.
+private struct SpeakerLabel: View {
+    @Environment(TranscriptionModel.self) private var transcription
+    let key: String
+    let label: String
+    let color: Color
+    @State private var editing = false
+
+    var body: some View {
+        Button { editing = true } label: {
+            Text(label).font(.caption.bold()).foregroundStyle(color)
+                .frame(width: 160, alignment: .leading).lineLimit(1)
+        }
+        .buttonStyle(.plain)
+        .help("Click to rename")
+        .popover(isPresented: $editing) {
+            RenameField(key: key).padding(12).frame(width: 240)
+        }
+    }
+}
+
+private struct RenameField: View {
+    @Environment(TranscriptionModel.self) private var transcription
+    let key: String
+    @State private var text = ""
+
+    var body: some View {
+        TextField(transcription.label(for: key), text: $text)
+            .onAppear { text = transcription.customName(for: key) }
+            .onSubmit { transcription.rename(key, to: text) }
+            .onDisappear { transcription.rename(key, to: text) }
+    }
+}
+
+/// Lists everyone found in the recording, grouped by track, with a name field for each.
+private struct SpeakersPanel: View {
+    @Environment(TranscriptionModel.self) private var transcription
+
+    var body: some View {
+        let groups = Dictionary(grouping: transcription.speakers, by: \.trackSource)
+        let order = transcription.speakers.map(\.trackSource).reduce(into: [String]()) {
+            if !$0.contains($1) { $0.append($1) }
+        }
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Speakers — type a name to rename").font(.caption).foregroundStyle(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(order, id: \.self) { track in
+                        ForEach(groups[track] ?? []) { speaker in
+                            SpeakerNameRow(speaker: speaker)
+                        }
+                    }
+                }
+            }
+            .frame(maxHeight: 130)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct SpeakerNameRow: View {
+    @Environment(TranscriptionModel.self) private var transcription
+    let speaker: Speaker
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack {
+            Text(speaker.defaultLabel).font(.callout).frame(width: 210, alignment: .leading).lineLimit(1)
+            Image(systemName: "arrow.right").foregroundStyle(.secondary)
+            TextField("Name", text: $text)
+                .textFieldStyle(.roundedBorder)
+                .focused($focused)
+                .onSubmit { transcription.rename(speaker.key, to: text) }
+                .onChange(of: focused) { _, isFocused in
+                    if !isFocused { transcription.rename(speaker.key, to: text) }   // commit on focus loss
+                }
+            Button {
+                text = ""
+                transcription.rename(speaker.key, to: "")
+            } label: { Image(systemName: "arrow.uturn.backward") }
+                .buttonStyle(.borderless).help("Restore default name")
+                .disabled(text.isEmpty && transcription.customName(for: speaker.key).isEmpty)
+        }
+        .onAppear { text = transcription.customName(for: speaker.key) }
+        .onChange(of: transcription.names[speaker.key]) { _, new in
+            // keep in sync when renamed via the transcript popover
+            if (new ?? "") != text.trimmingCharacters(in: .whitespacesAndNewlines) { text = new ?? "" }
+        }
     }
 }
