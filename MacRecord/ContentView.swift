@@ -6,8 +6,10 @@ struct ContentView: View {
     @Environment(WhisperModelStore.self) private var models
     @Environment(TranscriptionModel.self) private var transcription
     @Environment(\.openWindow) private var openWindow
-    @State private var pickingFolder = false
-    @State private var pickingRecording = false
+    private enum FolderPicker { case output, recording }
+    // One importer for both uses: SwiftUI honours only one `.fileImporter` per view.
+    @State private var showPicker = false
+    @State private var pickerMode = FolderPicker.output
     @State private var noModelAlert = false
 
     var body: some View {
@@ -20,13 +22,16 @@ struct ContentView: View {
         }
         .frame(minWidth: 560, minHeight: 540)
         .task { await model.run() }
-        .fileImporter(isPresented: $pickingFolder, allowedContentTypes: [.folder]) { result in
-            if case .success(let url) = result { model.setOutputFolder(url) }
-        }
-        .fileImporter(isPresented: $pickingRecording, allowedContentTypes: [.folder]) { result in
-            guard case .success(let url) = result, let id = models.selectedModelID else { return }
-            transcription.start(folder: url, modelID: id, store: models)
-            openWindow(id: "transcript")
+        .fileImporter(isPresented: $showPicker, allowedContentTypes: [.folder]) { result in
+            guard case .success(let url) = result else { return }
+            switch pickerMode {
+            case .output:
+                model.setOutputFolder(url)
+            case .recording:
+                guard let id = models.selectedModelID else { return }
+                transcription.start(folder: url, modelID: id, store: models)
+                openWindow(id: "transcript")
+            }
         }
         .fileDialogDefaultDirectory(model.sessionFolder ?? model.outputFolder)
         .alert("No transcription model", isPresented: $noModelAlert) {
@@ -55,7 +60,7 @@ struct ContentView: View {
                 Text("Choose a folder to record into").foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Choose…") { pickingFolder = true }.disabled(model.isRecording)
+            Button("Choose…") { pickerMode = .output; showPicker = true }.disabled(model.isRecording)
         }
         .padding(12)
     }
@@ -152,7 +157,7 @@ struct ContentView: View {
             }
             Spacer()
             Button {
-                if models.selectedModelID == nil { noModelAlert = true } else { pickingRecording = true }
+                if models.selectedModelID == nil { noModelAlert = true } else { pickerMode = .recording; showPicker = true }
             } label: {
                 Label("Transcribe…", systemImage: "text.bubble")
             }

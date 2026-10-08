@@ -121,8 +121,11 @@ final class RecorderModel {
     func setOutputFolder(_ url: URL) {
         _ = url.startAccessingSecurityScopedResource()
         defer { url.stopAccessingSecurityScopedResource() }
-        if let data = try? url.bookmarkData(options: .withSecurityScope) {
+        do {
+            let data = try url.bookmarkData(options: .withSecurityScope)
             UserDefaults.standard.set(data, forKey: Self.bookmarkKey)
+        } catch {
+            errorMessage = "The folder was selected but could not be remembered for next launch: \(error.localizedDescription)"
         }
         outputFolder = url
     }
