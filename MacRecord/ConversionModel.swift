@@ -15,6 +15,7 @@ final class ConversionModel {
     private(set) var trackCount = 0
     private(set) var currentName = ""
     private(set) var activeFolder: URL?
+    private(set) var lastFolder: URL?          // folder the current result/errors belong to
     private(set) var lastResult: String?
     private(set) var errors: [String] = []
     /// Bumped whenever a run ends, so lists can reload.
@@ -51,6 +52,8 @@ final class ConversionModel {
         trackCount = files.count
         currentName = ""
         activeFolder = folder
+        lastFolder = folder
+        let scoped = folder.startAccessingSecurityScopedResource()
         cancelFlag.withLock { $0 = false }
         let flag = cancelFlag
 
@@ -71,6 +74,7 @@ final class ConversionModel {
                 let saved = ByteCountFormatter.string(fromByteCount: outcome.savedBytes, countStyle: .file)
                 lastResult = "Converted \(outcome.renames.count) of \(files.count) track\(files.count == 1 ? "" : "s") to AAC, saved \(saved)"
             }
+            if scoped { folder.stopAccessingSecurityScopedResource() }
             isRunning = false
             activeFolder = nil
             finishedRuns += 1

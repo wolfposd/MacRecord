@@ -44,7 +44,7 @@ final class RecordingsModel {
                     at: url, includingPropertiesForKeys: [.fileSizeKey]) else { return nil }
             let audio = files.filter { ["caf", "m4a"].contains($0.pathExtension.lowercased()) && !$0.lastPathComponent.hasPrefix(".") }
             let hasSession = files.contains { $0.lastPathComponent == "session.json" }
-            guard !audio.isEmpty || hasSession else { return nil }
+            guard !audio.isEmpty || hasSession || files.contains(where: { $0.lastPathComponent.hasPrefix("Transcript.") }) else { return nil }
             let bytes = audio.reduce(Int64(0)) {
                 $0 + Int64((try? $1.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
             }
@@ -127,8 +127,10 @@ private struct RecordingRow: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(recording.title).font(.headline)
-                Text("\(recording.trackCount) track\(recording.trackCount == 1 ? "" : "s") · "
-                     + ByteCountFormatter.string(fromByteCount: recording.bytes, countStyle: .file))
+                Text(recording.trackCount == 0
+                     ? "Audio removed"
+                     : "\(recording.trackCount) track\(recording.trackCount == 1 ? "" : "s") · "
+                       + ByteCountFormatter.string(fromByteCount: recording.bytes, countStyle: .file))
                     .font(.caption).foregroundStyle(.secondary)
                 if !recording.summary.isEmpty {
                     Text(recording.summary).font(.callout).lineLimit(2).padding(.top, 2)

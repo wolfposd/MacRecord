@@ -59,6 +59,9 @@ final class TranscriptionModel {
     private(set) var names: [String: String] = [:]
     private(set) var saveError: String?
     private(set) var summary = ""
+    /// Audio files currently in the recording folder (`.caf` and `.m4a`), and the lossless `.caf` subset.
+    private(set) var audioFiles: [URL] = []
+    private(set) var cafFiles: [URL] = []
 
     private var task: Task<Void, Never>?
 
@@ -75,6 +78,7 @@ final class TranscriptionModel {
         }
         self.folder = folder
         refreshSummary()
+        refreshAudio()
         modelTitle = model.title
         entries = []
         tracks = []
@@ -230,7 +234,7 @@ final class TranscriptionModel {
                 busyTrack = nil
             }
             do {
-                guard let input = try Self.loadInputs(in: folder).first(where: { $0.url.lastPathComponent == file }) else {
+                guard let input = try Self.loadInputs(in: folder).first(where: { $0.url.deletingPathExtension().lastPathComponent == (file as NSString).deletingPathExtension }) else {
                     throw AudioError.message("The audio file \(file) is no longer in the folder.")
                 }
                 let pipe = try await Self.loadPipe(modelFolder: modelFolder, downloadBase: downloadBase)
@@ -340,6 +344,37 @@ final class TranscriptionModel {
         return String(format: "%02d:%02d:%02d", total / 3600, (total / 60) % 60, total % 60)
     }
 
+    // MARK: Audio files
+
+    private static func isAudio(_ url: URL) -> Bool {
+        ["caf", "m4a"].contains(url.pathExtension.lowercased()) && !url.lastPathComponent.hasPrefix(".")
+    }
+
+    /// Re-reads which audio files exist (after compressing or removing them).
+    func refreshAudio() {
+        guard let folder else { audioFiles = []; cafFiles = []; return }
+        let scoped = folder.startAccessingSecurityScopedResource()
+        defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
+        let files = ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
+            .filter(Self.isAudio)
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        audioFiles = files
+        cafFiles = files.filter { $0.pathExtension.lowercased() == "caf" }
+    }
+
+    /// Permanently deletes all audio files of this recording; the transcript, summary and session info stay.
+    func removeAudioFiles() {
+        guard !isWorking, let folder else { return }
+        let scoped = folder.startAccessingSecurityScopedResource()
+        defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
+        var failed: [String] = []
+        for file in audioFiles {
+            do { try FileManager.default.removeItem(at: file) } catch { failed.append(file.lastPathComponent) }
+        }
+        refreshAudio()
+        saveError = failed.isEmpty ? nil : "Could not delete: \(failed.joined(separator: ", "))"
+    }
+
     // MARK: Summary
 
     /// Re-reads Summary.txt (e.g. after it was edited from the recordings list).
@@ -423,6 +458,7 @@ final class TranscriptionModel {
 
         self.folder = folder
         refreshSummary()
+        refreshAudio()
         entries = []; tracks = []; speakers = []; names = [:]; saveError = nil
         outputFile = folder.appendingPathComponent(Self.textName)
 

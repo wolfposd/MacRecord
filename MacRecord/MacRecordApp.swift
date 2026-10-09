@@ -37,6 +37,7 @@ struct MacRecordApp: App {
             TranscriptView()
                 .environment(transcription)
                 .environment(models)
+                .environment(conversion)
         }
 
         Window("AI Chat", id: "ai-chat") {

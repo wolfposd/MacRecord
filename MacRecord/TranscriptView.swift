@@ -3,10 +3,12 @@ import SwiftUI
 struct TranscriptView: View {
     @Environment(TranscriptionModel.self) private var transcription
     @Environment(WhisperModelStore.self) private var store
+    @Environment(ConversionModel.self) private var conversion
     @Environment(\.openWindow) private var openWindow
     @State private var pending: PendingLanguage?
     @State private var confirmRestart = false
     @State private var noModelAlert = false
+    @State private var confirmRemoveAudio = false
 
     private struct PendingLanguage: Identifiable {
         let track: String
@@ -37,13 +39,23 @@ struct TranscriptView: View {
             Divider()
             footer
         }
-        .frame(minWidth: 560, minHeight: 720)
+        .frame(minWidth: 700, minHeight: 720)
+        .onAppear { transcription.refreshAudio() }
+        .onChange(of: conversion.finishedRuns) { transcription.refreshAudio() }
+        .onChange(of: transcription.phase) { transcription.refreshAudio() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button(action: restart) { Label("Restart Transcription", systemImage: "arrow.clockwise") }
                     .help("Transcribe this recording again")
-                    .disabled(transcription.folder == nil || transcription.isWorking || transcription.phase == .idle)
+                    .disabled(transcription.folder == nil || transcription.isWorking || transcription.phase == .idle
+                              || transcription.audioFiles.isEmpty || convertingHere)
             }
+        }
+        .confirmationDialog("Remove the audio files?", isPresented: $confirmRemoveAudio) {
+            Button("Remove Audio Files", role: .destructive) { transcription.removeAudioFiles() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently deletes \(transcription.audioFiles.count) audio file\(transcription.audioFiles.count == 1 ? "" : "s") of this recording. The transcript is kept, but the transcription can no longer be redone or its language changed.")
         }
         .confirmationDialog("Restart the transcription?", isPresented: $confirmRestart) {
             Button("Restart", role: .destructive, action: startOver)
@@ -130,7 +142,8 @@ struct TranscriptView: View {
     @ViewBuilder
     private func languageControl(for track: TrackProgress) -> some View {
         let name = track.language.map(WhisperModelStore.languageName)
-        if transcription.phase == .finished, !transcription.isWorking, track.state != .running {
+        if transcription.phase == .finished, !transcription.isWorking, track.state != .running,
+           !transcription.audioFiles.isEmpty, !convertingHere {
             Menu {
                 if !store.languages.isEmpty {
                     ForEach(store.languages, id: \.self) { code in
@@ -198,7 +211,41 @@ struct TranscriptView: View {
         return palette[(sources.firstIndex(of: source) ?? 0) % palette.count]
     }
 
+    /// True while this recording's audio is being compressed.
+    private var convertingHere: Bool {
+        conversion.isRunning && conversion.activeFolder == transcription.folder
+    }
+
+    @ViewBuilder
     private var footer: some View {
+        if convertingHere {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    ProgressView(value: conversion.fraction)
+                    Button("Cancel") { conversion.cancel() }
+                }
+                Text("Compressing to AAC… \(Int(conversion.fraction * 100)) % — track \(conversion.trackIndex) of \(conversion.trackCount)")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12).padding(.top, 12)
+        } else if conversion.lastFolder == transcription.folder,
+                  conversion.lastResult != nil || !conversion.errors.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                if let result = conversion.lastResult {
+                    Label(result, systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                }
+                ForEach(conversion.errors, id: \.self) { error in
+                    Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                }
+            }
+            .font(.caption)
+            .padding(.horizontal, 12).padding(.top, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        buttonBar
+    }
+
+    private var buttonBar: some View {
         HStack {
             switch transcription.phase {
             case .finished:
@@ -215,6 +262,16 @@ struct TranscriptView: View {
             if transcription.isWorking {
                 Button("Cancel") { transcription.cancel() }
             }
+            Button {
+                if let folder = transcription.folder { conversion.start(folder: folder, files: transcription.cafFiles) }
+            } label: { Label("Compress", systemImage: "arrow.down.right.and.arrow.up.left") }
+                .disabled(transcription.cafFiles.isEmpty || transcription.isWorking || conversion.isRunning)
+                .help(transcription.cafFiles.isEmpty
+                      ? "No uncompressed (.caf) audio left to compress"
+                      : "Convert the audio to AAC (about 30× smaller); the .caf files are deleted after a successful conversion")
+            Button { confirmRemoveAudio = true } label: { Label("Remove Audio", systemImage: "trash") }
+                .disabled(transcription.audioFiles.isEmpty || transcription.isWorking || conversion.isRunning)
+                .help("Delete the audio files of this recording and keep only the transcript")
             Button { openWindow(id: "ai-chat") } label: { Label("AI", systemImage: "sparkles") }
                 .disabled(transcription.phase != .finished)
                 .help("Chat with your selected AI model about this transcript")
