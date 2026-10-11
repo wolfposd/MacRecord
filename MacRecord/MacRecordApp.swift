@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 @main
@@ -23,6 +24,10 @@ struct MacRecordApp: App {
         }
         .windowResizability(.contentMinSize)
         .commands {
+            // The standard macOS About panel (icon, name, version) with a link to the project in its credits.
+            CommandGroup(replacing: .appInfo) {
+                Button("About MacRecord") { Self.showAbout() }
+            }
             // Settings now live in the main window, so ⌘, jumps there instead of opening a second window.
             CommandGroup(replacing: .appSettings) {
                 Button("Settings…") {
@@ -46,5 +51,22 @@ struct MacRecordApp: App {
                 .environment(transcription)
                 .environment(chat)
         }
+    }
+
+    private static let repositoryURL = URL(string: "https://github.com/wolfposd/MacRecord")!
+
+    private static func showAbout() {
+        let credits = NSMutableAttributedString(
+            string: "Records system audio per app and your microphone, then transcribes it locally.\n\n",
+            attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.labelColor])
+        credits.append(NSAttributedString(
+            string: "github.com/wolfposd/MacRecord",
+            attributes: [.font: NSFont.systemFont(ofSize: 11), .link: repositoryURL]))
+        let centered = NSMutableParagraphStyle()
+        centered.alignment = .center
+        credits.addAttribute(.paragraphStyle, value: centered, range: NSRange(location: 0, length: credits.length))
+
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
+        NSApp.activate()
     }
 }
