@@ -127,10 +127,15 @@ private struct MessageBubble: View {
                 if message.text.isEmpty && streaming {
                     ProgressView().controlSize(.small)
                 } else {
-                    Text(message.text).textSelection(.enabled)
+                    if isUser {
+                        Text(message.text).textSelection(.enabled)
+                    } else {
+                        MarkdownView(text: message.text)
+                    }
                 }
             }
             .padding(10)
+            .contextMenu { Button("Copy") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(message.text, forType: .string) } }
             .background(isUser ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12),
                         in: RoundedRectangle(cornerRadius: 10))
             if !isUser { Spacer(minLength: 60) }
