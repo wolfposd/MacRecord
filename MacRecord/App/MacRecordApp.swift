@@ -55,6 +55,8 @@ struct MacRecordApp: App {
 
     private static let repositoryURL = URL(string: "https://github.com/wolfposd/MacRecord")!
 
+    private static let licenseURL = URL(string: "https://github.com/wolfposd/MacRecord/blob/main/LICENSE.md")!
+
     private static func showAbout() {
         let credits = NSMutableAttributedString(
             string: "Records system audio per app and\n transcribes it locally.\n\n",
@@ -62,6 +64,15 @@ struct MacRecordApp: App {
         credits.append(NSAttributedString(
             string: "github.com/wolfposd/MacRecord",
             attributes: [.font: NSFont.systemFont(ofSize: 11), .link: repositoryURL]))
+        credits.append(NSAttributedString(
+            string: "\n\nReleased under the ",
+            attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.labelColor]))
+        credits.append(NSAttributedString(
+            string: "MIT License",
+            attributes: [.font: NSFont.systemFont(ofSize: 11), .link: licenseURL]))
+        credits.append(NSAttributedString(
+            string: ".",
+            attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.labelColor]))
         let centered = NSMutableParagraphStyle()
         centered.alignment = .center
         credits.addAttribute(.paragraphStyle, value: centered, range: NSRange(location: 0, length: credits.length))
