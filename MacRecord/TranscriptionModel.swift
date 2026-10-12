@@ -8,7 +8,7 @@ struct TranscriptEntry: Identifiable, Hashable, Codable {
     private enum CodingKeys: String, CodingKey { case time, speakerKey, text }
     let time: Double            // seconds since the start of the session
     let speakerKey: String      // stable identity, see `TranscriptionModel.label(for:)`
-    let text: String
+    var text: String
 }
 
 /// Someone (or some source) heard in a track; the unit that can be renamed.
@@ -417,6 +417,46 @@ final class TranscriptionModel {
         } catch {
             saveError = "Could not update Transcript.txt: \(error.localizedDescription)"
         }
+    }
+
+    /// Replaces the text of one line (manual correction) and rewrites the transcript files.
+    func setText(_ id: UUID, to text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let index = entries.firstIndex(where: { $0.id == id }),
+              entries[index].text != trimmed else { return }
+        entries[index].text = trimmed
+        guard phase == .finished else { return }
+        do {
+            try writeTranscript()
+            saveError = nil
+        } catch {
+            saveError = "Could not update Transcript.txt: \(error.localizedDescription)"
+        }
+    }
+
+    /// The audio file and time range (in seconds within that file) belonging to a line, if the audio still exists.
+    func clip(for entry: TranscriptEntry) -> (url: URL, start: Double, end: Double)? {
+        guard let folder else { return nil }
+        let trackFile = String(entry.speakerKey.split(separator: "#", maxSplits: 1).first ?? "")
+        let stem = (trackFile as NSString).deletingPathExtension
+        guard let url = audioFiles.first(where: { $0.deletingPathExtension().lastPathComponent == stem }) else { return nil }
+
+        var offset = 0.0
+        if let data = try? Data(contentsOf: folder.appendingPathComponent("session.json")) {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            if let session = try? decoder.decode(SessionInfo.self, from: data),
+               let track = session.tracks.first(where: { ($0.file as NSString).deletingPathExtension == stem }) {
+                offset = track.startOffsetSeconds ?? 0
+            }
+        }
+        let start = max(0, entry.time - offset)
+        // Until the next line of the same track, at most two minutes.
+        let next = entries.first {
+            $0.time > entry.time && ($0.speakerKey.split(separator: "#").first.map(String.init) ?? "") == trackFile
+        }
+        let end = min(next.map { $0.time - offset } ?? start + 30, start + 120)
+        return (url, start, max(end, start + 1))
     }
 
     var transcriptText: String {

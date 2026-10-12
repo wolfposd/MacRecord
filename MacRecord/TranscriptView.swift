@@ -5,6 +5,7 @@ struct TranscriptView: View {
     @Environment(WhisperModelStore.self) private var store
     @Environment(ConversionModel.self) private var conversion
     @Environment(\.openWindow) private var openWindow
+    @State private var player = ClipPlayer()
     @State private var pending: PendingLanguage?
     @State private var confirmRestart = false
     @State private var noModelAlert = false
@@ -193,11 +194,24 @@ struct TranscriptView: View {
             LazyVStack(alignment: .leading, spacing: 8) {
                 ForEach(transcription.entries) { entry in
                     let label = transcription.label(for: entry.speakerKey)
+                    let clip = transcription.clip(for: entry)
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Button {
+                            if let clip {
+                                player.toggle(id: entry.id, url: clip.url, start: clip.start, end: clip.end,
+                                              folder: transcription.folder)
+                            }
+                        } label: {
+                            Image(systemName: player.playingID == entry.id ? "stop.circle.fill" : "play.circle.fill")
+                        }
+                        .buttonStyle(.borderless)
+                        .opacity(clip == nil ? 0 : 1)
+                        .disabled(clip == nil)
+                        .help("Play this line")
                         Text(TranscriptionModel.timestamp(entry.time))
                             .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
                         SpeakerLabel(key: entry.speakerKey, label: label, color: color(for: label, in: labels))
-                        Text(entry.text).textSelection(.enabled)
+                        EditableLine(text: entry.text) { transcription.setText(entry.id, to: $0) }
                     }
                 }
             }
@@ -288,6 +302,37 @@ struct TranscriptView: View {
 }
 
 /// Speaker name shown in front of each line; click to rename that speaker.
+/// A transcript line that turns into a text field when clicked.
+private struct EditableLine: View {
+    let text: String
+    let onCommit: (String) -> Void
+    @State private var editing = false
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        if editing {
+            TextField("", text: $draft, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .focused($focused)
+                .onSubmit(finish)
+                .onChange(of: focused) { _, isFocused in if !isFocused { finish() } }
+                .onExitCommand { editing = false }
+        } else {
+            Text(text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { draft = text; editing = true; focused = true }
+        }
+    }
+
+    private func finish() {
+        guard editing else { return }
+        editing = false
+        onCommit(draft)
+    }
+}
+
 private struct SpeakerLabel: View {
     @Environment(TranscriptionModel.self) private var transcription
     let key: String

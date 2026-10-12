@@ -57,7 +57,7 @@ struct MacRecordApp: App {
 
     private static func showAbout() {
         let credits = NSMutableAttributedString(
-            string: "Records system audio per app and your microphone, then transcribes it locally.\n\n",
+            string: "Records system audio per app and\n transcribes it locally.\n\n",
             attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.labelColor])
         credits.append(NSAttributedString(
             string: "github.com/wolfposd/MacRecord",
