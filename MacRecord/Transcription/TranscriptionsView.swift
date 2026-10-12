@@ -108,8 +108,8 @@ struct TranscriptionsView: View {
         .navigationTitle("Transcriptions")
         .toolbar {
             ToolbarItemGroup {
-                Button { transcribeActions.chooseFolder() } label: { Label("Other Folder…", systemImage: "folder") }
-                    .help("Transcribe a recording folder from somewhere else")
+                Button { transcribeActions.chooseFolder() } label: { Label("Import", systemImage: "square.and.arrow.down") }
+                    .help("Copy a recording folder into the storage folder and open it")
                 Button { list.reload(in: model.outputFolder) } label: { Label("Refresh", systemImage: "arrow.clockwise") }
                     .help("Look for new recordings")
             }
@@ -143,6 +143,7 @@ struct TranscriptionsView: View {
         }
         .onAppear { list.reload(in: model.outputFolder) }
         .onChange(of: model.outputFolder) { list.reload(in: model.outputFolder) }
+        .onChange(of: nav.libraryVersion) { list.reload(in: model.outputFolder) }
         .onChange(of: conversion.finishedRuns) { list.reload(in: model.outputFolder) }
         .onChange(of: model.isRecording) { if !model.isRecording { list.reload(in: model.outputFolder) } }
     }

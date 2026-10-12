@@ -248,6 +248,15 @@ struct TranscriptSettingsView: View {
             } footer: {
                 Text("Models are downloaded from Hugging Face (argmaxinc/whisperkit-coreml) and run locally on this Mac.")
             }
+            
+            Section("Default model") {
+                Picker("Use for transcription", selection: $store.selectedModelID) {
+                    Text("None").tag(String?.none)
+                    ForEach(WhisperModel.all.filter { store.status[$0.id] == .installed }) {
+                        Text($0.title).tag(Optional($0.id))
+                    }
+                }
+            }
 
             Section {
                 ForEach(store.languages, id: \.self) { code in
@@ -305,15 +314,6 @@ struct TranscriptSettingsView: View {
                 Text("Speaker identification")
             } footer: {
                 Text("Tells the speakers apart within each recorded track (e.g. several people in a Teams call) and labels them Speaker 1, Speaker 2… A track with a single voice keeps its plain name. Transcription becomes somewhat slower.")
-            }
-
-            Section("Default model") {
-                Picker("Use for transcription", selection: $store.selectedModelID) {
-                    Text("None").tag(String?.none)
-                    ForEach(WhisperModel.all.filter { store.status[$0.id] == .installed }) {
-                        Text($0.title).tag(Optional($0.id))
-                    }
-                }
             }
         }
         .formStyle(.grouped)
