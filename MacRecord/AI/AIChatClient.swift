@@ -22,12 +22,15 @@ enum AIChatError: LocalizedError {
 }
 
 /// Streams a chat completion as text chunks. Anthropic models use the Messages API,
-/// custom models the OpenAI-compatible `/chat/completions` API.
+/// custom models the OpenAI-compatible `/chat/completions` API, Claude Code the local CLI.
 enum AIChatClient {
     static func stream(
-        model: AIModel, apiKey: String, system: String, messages: [ChatMessage]
+        model: AIModel, apiKey: String, system: String, messages: [ChatMessage], folder: URL? = nil
     ) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
+        if model.provider == .claudeCode {
+            return ClaudeCodeRunner.stream(model: model, system: system, messages: messages, folder: folder)
+        }
+        return AsyncThrowingStream { continuation in
             let task = Task {
                 do {
                     let request = try makeRequest(model: model, apiKey: apiKey, system: system, messages: messages)
@@ -64,6 +67,8 @@ enum AIChatClient {
         var body: [String: Any]
 
         switch model.provider {
+        case .claudeCode:
+            throw AIChatError.api("Claude Code does not use HTTP.")   // handled by ClaudeCodeRunner
         case .claude:
             request = URLRequest(url: URL(string: AIConfigStore.anthropicURL + "/v1/messages")!)
             request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
@@ -91,6 +96,8 @@ enum AIChatClient {
             throw AIChatError.api(message)
         }
         switch provider {
+        case .claudeCode:
+            return nil
         case .claude:
             guard json["type"] as? String == "content_block_delta",
                   let delta = json["delta"] as? [String: Any] else { return nil }

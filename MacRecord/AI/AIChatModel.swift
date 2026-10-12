@@ -23,6 +23,13 @@ final class AIChatModel {
         system = Self.instruction + "\n\n--- TRANSCRIPT ---\n" + transcript
     }
 
+    static let cliInstruction = """
+        You are helping the user work with the transcript of an audio recording. The transcript is in \
+        Transcript.txt in the current directory (lines look like "[hh:mm:ss] Speaker: text"); \
+        Transcript.json holds the same data in structured form. Read it before answering. \
+        Answer in the user's language unless asked otherwise.
+        """
+
     func send(_ text: String, model: AIModel, apiKey: String) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isStreaming else { return }
@@ -33,11 +40,13 @@ final class AIChatModel {
         let index = messages.count - 1
         isStreaming = true
 
-        let system = system
+        // Claude Code reads the transcript from the folder itself instead of receiving it inline.
+        let system = model.provider == .claudeCode ? Self.cliInstruction : system
+        let folder = contextFolder
         task = Task {
             defer { isStreaming = false }
             do {
-                for try await chunk in AIChatClient.stream(model: model, apiKey: apiKey, system: system, messages: history) {
+                for try await chunk in AIChatClient.stream(model: model, apiKey: apiKey, system: system, messages: history, folder: folder) {
                     messages[index].text += chunk
                 }
             } catch {

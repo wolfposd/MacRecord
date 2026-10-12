@@ -2,9 +2,17 @@ import Foundation
 import Observation
 
 enum AIProvider: String, CaseIterable, Identifiable, Codable {
-    case claude, custom
+    case claude, claudeCode, custom
     var id: String { rawValue }
-    var title: String { self == .claude ? "Anthropic Claude" : "Custom" }
+    var title: String {
+        switch self {
+        case .claude: "Anthropic Claude"
+        case .claudeCode: "Claude Code"
+        case .custom: "Custom"
+        }
+    }
+    /// Singletons are a single entry with a fixed name; adding one again reopens the existing entry.
+    var isSingleton: Bool { self != .custom }
 }
 
 /// One model the user added, shown as a badge under "Your Models".
@@ -12,8 +20,8 @@ struct AIModel: Identifiable, Codable, Hashable {
     var id = UUID()
     var provider: AIProvider
     var name: String            // badge title
-    var baseURL = ""
-    var modelName = ""
+    var baseURL = ""            // Claude Code: optional path of the `claude` binary
+    var modelName = ""          // Claude Code: optional alias such as "sonnet"; empty = CLI default
     // The API key is not stored here; see `AIConfigStore.apiKey(for:)`.
 }
 
@@ -25,8 +33,11 @@ struct CustomAIConfig: Equatable {
     var apiKey = ""
 
     func isValid(for provider: AIProvider) -> Bool {
+        if provider == .claudeCode { return true }
         guard !modelName.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
         switch provider {
+        case .claudeCode:
+            return true
         case .claude:
             return !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .custom:
@@ -77,9 +88,12 @@ final class AIConfigStore {
     /// Claude is a single entry with a fixed name and endpoint; only key and model name are editable.
     func save(_ config: CustomAIConfig, provider: AIProvider, id: UUID? = nil) {
         var id = id
-        if provider == .claude { id = id ?? models.first { $0.provider == .claude }?.id }
-        let name = provider == .claude ? AIProvider.claude.title : config.name.trimmingCharacters(in: .whitespaces)
-        let baseURL = provider == .claude ? Self.anthropicURL : config.baseURL.trimmingCharacters(in: .whitespaces)
+        if provider.isSingleton { id = id ?? models.first { $0.provider == provider }?.id }
+        let name = provider.isSingleton ? provider.title : config.name.trimmingCharacters(in: .whitespaces)
+        let baseURL = switch provider {
+        case .claude: Self.anthropicURL
+        case .claudeCode, .custom: config.baseURL.trimmingCharacters(in: .whitespaces)
+        }
         let modelName = config.modelName.trimmingCharacters(in: .whitespaces)
         let key = config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -90,7 +104,7 @@ final class AIConfigStore {
         } else {
             models.append(model)
         }
-        KeyFile.write(key, account: account(model.id))
+        if provider != .claudeCode { KeyFile.write(key, account: account(model.id)) }
         selectedID = model.id
         persist()
     }

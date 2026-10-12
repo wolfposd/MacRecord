@@ -73,8 +73,8 @@ struct AISettingsView: View {
                     HStack(spacing: 10) {
                         ForEach(AIProvider.allCases) { provider in
                             ProviderBadge(title: provider.title, subtitle: nil, isSelected: false) {
-                                // Claude is a single entry: reopen it for editing if it already exists.
-                                let existing = provider == .claude ? ai.models.first { $0.provider == .claude }?.id : nil
+                                // Claude and Claude Code are single entries: reopen for editing if they already exist.
+                                let existing = provider.isSingleton ? ai.models.first { $0.provider == provider }?.id : nil
                                 path.append(.form(provider, existing))
                             }
                         }
@@ -166,13 +166,31 @@ private struct ModelFormView: View {
                     TextField("Base URL", text: $config.baseURL, prompt: Text("https://api.example.com/v1"))
                         .autocorrectionDisabled()
                 }
-                SecureField("API key", text: $config.apiKey)
-                TextField("Model name", text: $config.modelName, prompt: Text("model-id"))
-                    .autocorrectionDisabled()
+                if provider == .claudeCode {
+                    TextField("Model (optional)", text: $config.modelName, prompt: Text("sonnet"))
+                        .autocorrectionDisabled()
+                    TextField("CLI path (optional)", text: $config.baseURL, prompt: Text("auto-detect"))
+                        .autocorrectionDisabled()
+                    LabeledContent("Detected") {
+                        if let url = ClaudeCodeRunner.locate(override: config.baseURL) {
+                            Text(url.path).foregroundStyle(.secondary).textSelection(.enabled)
+                        } else {
+                            Text("claude not found").foregroundStyle(.red)
+                        }
+                    }
+                } else {
+                    SecureField("API key", text: $config.apiKey)
+                    TextField("Model name", text: $config.modelName, prompt: Text("model-id"))
+                        .autocorrectionDisabled()
+                }
             } footer: {
-                Text(provider == .claude
-                     ? "Uses the Anthropic API."
-                     : "Must be an OpenAI-compatible endpoint (…/chat/completions). Leave empty for local servers.")
+                switch provider {
+                case .claude: Text("Uses the Anthropic API.")
+                case .claudeCode:
+                    Text("Runs the installed Claude Code CLI (claude -p) in the recording's folder and lets it read the transcript files. Requires Claude Code to be installed and logged in.")
+                case .custom:
+                    Text("Must be an OpenAI-compatible endpoint (…/chat/completions). Leave empty for local servers.")
+                }
             }
 
             Section {
@@ -208,6 +226,7 @@ private struct ModelFormView: View {
     private var title: String {
         switch (provider, editing) {
         case (.claude, _): "Anthropic Claude"
+        case (.claudeCode, _): "Claude Code"
         case (.custom, nil): "Add custom model"
         case (.custom, _): "Edit model"
         }

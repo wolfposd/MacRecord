@@ -31,7 +31,7 @@ struct AIChatView: View {
             Image(systemName: "sparkles")
             if let model = ai.selected {
                 Text(model.name).font(.headline)
-                Text(model.modelName).foregroundStyle(.secondary)
+                if !model.modelName.isEmpty { Text(model.modelName).foregroundStyle(.secondary) }
             } else {
                 Text("No AI model selected").font(.headline)
             }
