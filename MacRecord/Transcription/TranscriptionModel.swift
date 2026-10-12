@@ -490,6 +490,14 @@ final class TranscriptionModel {
         return [jsonName, textName].contains { fm.fileExists(atPath: folder.appendingPathComponent($0).path) }
     }
 
+    /// Forgets the loaded recording after its folder was deleted.
+    func unload(folder deleted: URL) {
+        guard folder == deleted, !isWorking else { return }
+        folder = nil; entries = []; tracks = []; speakers = []; names = [:]
+        saveError = nil; outputFile = nil; summary = ""; audioFiles = []; cafFiles = []
+        phase = .idle
+    }
+
     /// Shows a transcript that was written earlier instead of transcribing again.
     func load(folder: URL) {
         guard !isWorking else { return }

@@ -69,6 +69,9 @@ struct TranscriptionsView: View {
     @Environment(ConversionModel.self) private var conversion
     @State private var list = RecordingsModel()
     @State private var editing: Recording?
+    @State private var removing: Recording?
+    @State private var deleting: Recording?
+    @State private var removeError: String?
 
     var body: some View {
         Group {
@@ -93,6 +96,10 @@ struct TranscriptionsView: View {
                                 transcribeActions.open(recording.url)
                             }
                             Button("Edit Summary…") { editing = recording }
+                            Button("Remove Audio…", role: .destructive) { removing = recording }
+                                .disabled(recording.trackCount == 0 || busy(recording))
+                            Button("Delete…", role: .destructive) { deleting = recording }
+                                .disabled(busy(recording))
                             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([recording.url]) }
                         }
                 }
@@ -107,6 +114,27 @@ struct TranscriptionsView: View {
                     .help("Look for new recordings")
             }
         }
+        .confirmationDialog("Remove the audio files?", isPresented: Binding(
+            get: { removing != nil }, set: { if !$0 { removing = nil } }), presenting: removing
+        ) { recording in
+            Button("Remove Audio", role: .destructive) { removeAudio(of: recording) }
+            Button("Cancel", role: .cancel) {}
+        } message: { recording in
+            Text("The audio of \(recording.title) is deleted permanently. The transcript is kept, but the transcription can no longer be redone.")
+        }
+        .confirmationDialog("Delete this recording?", isPresented: Binding(
+            get: { deleting != nil }, set: { if !$0 { deleting = nil } }), presenting: deleting
+        ) { recording in
+            Button("Delete Recording", role: .destructive) { delete(recording) }
+            Button("Cancel", role: .cancel) {}
+        } message: { recording in
+            Text("The folder of \(recording.title) is deleted permanently, including its audio, transcript, summary and all other files. This cannot be undone.")
+        }
+        .alert("Something went wrong", isPresented: Binding(
+            get: { removeError != nil }, set: { if !$0 { removeError = nil } })
+        ) {
+            Button("OK") {}
+        } message: { Text(removeError ?? "") }
         .sheet(item: $editing) { recording in
             SummarySheet(recording: recording) {
                 list.reload(in: model.outputFolder)
@@ -117,6 +145,44 @@ struct TranscriptionsView: View {
         .onChange(of: model.outputFolder) { list.reload(in: model.outputFolder) }
         .onChange(of: conversion.finishedRuns) { list.reload(in: model.outputFolder) }
         .onChange(of: model.isRecording) { if !model.isRecording { list.reload(in: model.outputFolder) } }
+    }
+}
+
+extension TranscriptionsView {
+    /// True while the recording is being transcribed or compressed.
+    fileprivate func busy(_ recording: Recording) -> Bool {
+        (transcription.folder == recording.url && transcription.isWorking)
+            || (conversion.isRunning && conversion.activeFolder == recording.url)
+    }
+
+    fileprivate func delete(_ recording: Recording) {
+        guard !busy(recording) else { return }
+        let folder = recording.url
+        let scoped = folder.startAccessingSecurityScopedResource()
+        defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
+        do {
+            try FileManager.default.removeItem(at: folder)
+            transcription.unload(folder: folder)
+        } catch {
+            removeError = "Could not delete the recording: \(error.localizedDescription)"
+        }
+        list.reload(in: model.outputFolder)
+    }
+
+    fileprivate func removeAudio(of recording: Recording) {
+        guard !busy(recording) else { return }
+        let folder = recording.url
+        let scoped = folder.startAccessingSecurityScopedResource()
+        defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
+        let files = ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
+            .filter { ["caf", "m4a"].contains($0.pathExtension.lowercased()) && !$0.lastPathComponent.hasPrefix(".") }
+        var failed: [String] = []
+        for file in files {
+            do { try FileManager.default.removeItem(at: file) } catch { failed.append(file.lastPathComponent) }
+        }
+        if transcription.folder == folder { transcription.refreshAudio() }
+        list.reload(in: model.outputFolder)
+        if !failed.isEmpty { removeError = "Could not delete: \(failed.joined(separator: ", "))" }
     }
 }
 
