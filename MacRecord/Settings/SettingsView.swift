@@ -52,7 +52,7 @@ struct AISettingsView: View {
                             ForEach(ai.models) { model in
                                 ProviderBadge(
                                     title: model.name,
-                                    subtitle: model.modelName,
+                                    subtitle: model.modelName.isEmpty ? "Default model" : model.modelName,
                                     isSelected: ai.selectedID == model.id
                                 ) { ai.selectedID = model.id }
                                 .contextMenu {
@@ -138,8 +138,8 @@ private struct ProviderBadge: View {
                 if isSelected { Image(systemName: "checkmark.circle.fill") }
                 VStack(alignment: .leading, spacing: 0) {
                     Text(title).fontWeight(.medium)
-                    if let subtitle, !subtitle.isEmpty {
-                        Text(subtitle).font(.caption2).foregroundStyle(.secondary)
+                    if let subtitle {
+                        Text(subtitle.isEmpty ? " " : subtitle).font(.caption2).foregroundStyle(.secondary)
                     }
                 }
             }

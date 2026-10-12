@@ -29,11 +29,20 @@ struct AIChatView: View {
     private var header: some View {
         HStack {
             Image(systemName: "sparkles")
-            if let model = ai.selected {
-                Text(model.name).font(.headline)
-                if !model.modelName.isEmpty { Text(model.modelName).foregroundStyle(.secondary) }
-            } else {
+            if ai.models.isEmpty {
                 Text("No AI model selected").font(.headline)
+            } else {
+                @Bindable var ai = ai
+                Picker("Model", selection: $ai.selectedID) {
+                    if ai.selected == nil { Text("Select a model").tag(UUID?.none) }
+                    ForEach(ai.models) { model in
+                        Text(model.modelName.isEmpty ? model.name : "\(model.name) · \(model.modelName)")
+                            .tag(Optional(model.id))
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .disabled(chat.isStreaming)
             }
             Spacer()
             Button("Reload transcript") { refreshContext() }
