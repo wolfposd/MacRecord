@@ -3,14 +3,21 @@ name: Build
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: macos-26
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+
+      - name: Derive version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
       - name: Select newest Xcode
         run: |
@@ -27,6 +34,7 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=macOS' \
             -derivedDataPath build \
+            ${VERSION:+MARKETING_VERSION="$VERSION"} \
             CURRENT_PROJECT_VERSION="$(git rev-parse --short HEAD)" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY=- \
@@ -34,14 +42,50 @@ jobs:
 
       - name: Create DMG
         run: |
-          mkdir dmg-root
+          mkdir dmg-root dmg-root/.background
           ditto build/Build/Products/Release/MacRecord.app dmg-root/MacRecord.app
           ln -s /Applications dmg-root/Applications
-          hdiutil create -volname MacRecord -srcfolder dmg-root -ov -format UDZO MacRecord.dmg
+          cp .github/dmg/background.png dmg-root/.background/background.png
+          hdiutil create -volname MacRecord -srcfolder dmg-root -ov -format UDRW MacRecord-rw.dmg
+          hdiutil attach MacRecord-rw.dmg -mountpoint /Volumes/MacRecord -noverify -noautoopen
+          osascript <<'EOF'
+          tell application "Finder"
+            tell disk "MacRecord"
+              open
+              set current view of container window to icon view
+              set toolbar visible of container window to false
+              set statusbar visible of container window to false
+              set the bounds of container window to {200, 120, 860, 520}
+              set opts to the icon view options of container window
+              set arrangement of opts to not arranged
+              set icon size of opts to 128
+              set text size of opts to 13
+              set background picture of opts to file ".background:background.png"
+              set position of item "MacRecord.app" of container window to {165, 190}
+              set position of item "Applications" of container window to {495, 190}
+              update without registering applications
+              delay 2
+              close
+            end tell
+          end tell
+          EOF
+          sync
+          hdiutil detach /Volumes/MacRecord
+          hdiutil convert MacRecord-rw.dmg -format UDZO -o MacRecord.dmg
+          rm MacRecord-rw.dmg
+          if [ -n "$VERSION" ]; then mv MacRecord.dmg "MacRecord-$VERSION.dmg"; fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: MacRecord
-          path: MacRecord.dmg
+          path: MacRecord*.dmg
           if-no-files-found: error
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: MacRecord-${{ env.VERSION }}.dmg
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
