@@ -34,7 +34,7 @@ jobs:
 
       - name: Zip the app
         run: |
-          ditto -c -k --sequesterRsrc --keepParent build/Build/Products/Release/MacRecord.app MacRecord.zip
+          ditto -c -k --keepParent build/Build/Products/Release/MacRecord.app MacRecord.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -42,3 +42,4 @@ jobs:
           name: MacRecord
           path: MacRecord.zip
           if-no-files-found: error
+          compression-level: 0
