@@ -49,6 +49,7 @@ struct RootView: View {
     @Environment(TranscriptionModel.self) private var transcription
     @Environment(ConversionModel.self) private var conversion
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
 
     @Environment(AppNavigation.self) private var nav
 
@@ -88,8 +89,15 @@ struct RootView: View {
         .onChange(of: model.isRecording) { wasRecording, isRecording in
             if isRecording {
                 conversion.clearResult()
+                openWindow(id: "mini")
+                hideMainWindow()
             } else if wasRecording, conversion.convertToAAC, let folder = model.sessionFolder {
                 conversion.start(folder: folder, files: model.lastTrackFiles)
+            }
+            if wasRecording && !isRecording {
+                dismissWindow(id: "mini")
+                openWindow(id: "main")
+                mainWindow?.makeKeyAndOrderFront(nil)
             }
         }
         // One importer for the whole window: SwiftUI honours only one `.fileImporter` per view.
@@ -118,6 +126,13 @@ struct RootView: View {
             Text(model.errorMessage ?? "")
         }
     }
+
+    /// The main window is only hidden (not closed), so this view keeps driving the recorder's meters and timer.
+    private var mainWindow: NSWindow? {
+        NSApp.windows.first { $0.identifier?.rawValue.hasPrefix("main") == true }
+    }
+
+    private func hideMainWindow() { mainWindow?.orderOut(nil) }
 
     private func row(_ page: AppNavigation.Page) -> some View {
         Label(page.rawValue, systemImage: page.icon).tag(page)

@@ -52,9 +52,15 @@ final class RecorderModel {
         let key: String
         let name: String
         let file: String
+        let iconPath: String?
         let capture: CaptureSource
     }
     private var active: [Active] = []
+
+    /// What the current recording captures, for the compact recording window.
+    var activeSources: [(key: String, name: String, iconPath: String?)] {
+        active.map { ($0.key, $0.name, $0.iconPath) }
+    }
     private var startDate = Date()
     private var session: SessionInfo?
     private var scopedFolder: URL?
@@ -177,15 +183,15 @@ final class RecorderModel {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             sessionFolder = dir
 
-            var plan: [(key: String, name: String, kind: SourceKind, channels: Int)] = []
+            var plan: [(key: String, name: String, kind: SourceKind, channels: Int, icon: String?)] = []
             if recordSystemAudio {
-                plan.append((Self.systemKey, "All System Audio", .allSystemAudio, channels(for: Self.systemKey, default: 2)))
+                plan.append((Self.systemKey, "All System Audio", .allSystemAudio, channels(for: Self.systemKey, default: 2), nil))
             }
             for app in apps where selectedApps.contains(app.id) {
-                plan.append((app.id, app.name, .processes(app.processObjects), channels(for: app.id, default: 2)))
+                plan.append((app.id, app.name, .processes(app.processObjects), channels(for: app.id, default: 2), app.iconPath))
             }
             if recordMic, let mic = selectedMic {
-                plan.append((Self.micKey, "Microphone – \(mic.name)", .microphone(mic), channels(for: Self.micKey, default: 1)))
+                plan.append((Self.micKey, "Microphone – \(mic.name)", .microphone(mic), channels(for: Self.micKey, default: 1), nil))
             }
             guard !plan.isEmpty else { throw AudioError.message("Nothing selected to record.") }
 
@@ -196,7 +202,7 @@ final class RecorderModel {
                     let file = Self.uniqueFileName(item.name, used: &used)
                     let capture = try CaptureSource.make(
                         kind: item.kind, channels: item.channels, url: dir.appendingPathComponent(file))
-                    created.append(Active(key: item.key, name: item.name, file: file, capture: capture))
+                    created.append(Active(key: item.key, name: item.name, file: file, iconPath: item.icon, capture: capture))
                 }
                 startDate = Date()
                 for item in created { try item.capture.start() }

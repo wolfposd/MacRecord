@@ -38,6 +38,14 @@ struct MacRecordApp: App {
             }
         }
 
+        Window("Recording", id: "mini") {
+            MiniRecorderView()
+                .environment(model)
+        }
+        .windowResizability(.contentSize)
+        .windowLevel(.floating)
+        .defaultLaunchBehavior(.suppressed)
+
         Window("Transcript", id: "transcript") {
             TranscriptView()
                 .environment(transcription)
