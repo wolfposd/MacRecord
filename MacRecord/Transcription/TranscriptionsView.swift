@@ -91,6 +91,9 @@ struct TranscriptionsView: View {
                 List(list.recordings) { recording in
                     Button { transcribeActions.open(recording.url) } label: { RecordingRow(recording: recording) }
                         .buttonStyle(.plain)
+                        .listRowSeparator(.visible)
+                        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                        .alignmentGuide(.listRowSeparatorTrailing) { $0.width }
                         .contextMenu {
                             Button(recording.hasTranscript ? "Open Transcript" : "Transcribe…") {
                                 transcribeActions.open(recording.url)
