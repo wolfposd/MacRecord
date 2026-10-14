@@ -69,6 +69,19 @@ final class TranscriptionModel {
 
     var isWorking: Bool { phase == .loadingModel || phase == .transcribing || busyTrack != nil }
 
+    /// Selects a recording without transcribing it; the transcript window offers a "Start transcription" button.
+    func prepare(folder: URL) {
+        guard !isWorking else { return }
+        self.folder = folder
+        refreshSummary()
+        refreshAudio()
+        modelTitle = ""
+        entries = []; tracks = []; speakers = []; names = [:]
+        saveError = nil
+        outputFile = nil
+        phase = .idle
+    }
+
     func start(folder: URL, modelID: String, store: WhisperModelStore) {
         guard !isWorking else { return }
         guard let model = WhisperModel.all.first(where: { $0.id == modelID }),

@@ -193,9 +193,9 @@ struct RootView: View {
         }
     }
 
+    /// Opens the transcript window for a recording that has no transcript yet; the user starts the run there.
     private func transcribe(_ folder: URL) {
-        guard let id = models.selectedModelID else { noModelAlert = true; return }
-        transcription.start(folder: folder, modelID: id, store: models)
+        transcription.prepare(folder: folder)
         openWindow(id: "transcript")
     }
 }

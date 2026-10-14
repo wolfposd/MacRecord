@@ -29,7 +29,19 @@ struct TranscriptView: View {
                 SpeakersPanel()
                 Divider()
             }
-            if transcription.entries.isEmpty {
+            if transcription.phase == .idle, transcription.folder != nil, transcription.entries.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "text.bubble").font(.system(size: 40)).foregroundStyle(.secondary)
+                    Text("Not transcribed yet").font(.title3)
+                    Button("Start transcription", action: startOver)
+                        .buttonStyle(.borderedProminent).controlSize(.large)
+                        .disabled(transcription.audioFiles.isEmpty || convertingHere)
+                    if transcription.audioFiles.isEmpty {
+                        Text("This recording has no audio files.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if transcription.entries.isEmpty {
                 ContentUnavailableView(
                     placeholderTitle, systemImage: "text.bubble",
                     description: Text(placeholderText))
@@ -175,7 +187,8 @@ struct TranscriptView: View {
     }
 
     private func startOver() {
-        guard let folder = transcription.folder, let id = store.selectedModelID else { return }
+        guard let folder = transcription.folder else { return }
+        guard let id = store.selectedModelID else { noModelAlert = true; return }
         transcription.start(folder: folder, modelID: id, store: store)
     }
 
