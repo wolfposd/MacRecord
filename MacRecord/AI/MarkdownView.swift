@@ -1,77 +1,122 @@
+import AppKit
 import SwiftUI
 
-/// Renders Markdown (headings, lists, code blocks, quotes, tables, inline styles) with plain SwiftUI.
+/// Renders Markdown (headings, lists, code blocks, quotes, tables, inline styles) as one selectable text flow.
 /// Foundation parses the text and tags every run with its block (`PresentationIntent`); `MarkdownBlock.parse`
-/// regroups those runs into blocks that the view lays out.
+/// regroups those runs into blocks that `MarkdownBlock.attributedString` lays out.
 struct MarkdownView: View {
     let text: String
 
     var body: some View {
-        let blocks = MarkdownBlock.parse(text)
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(blocks) { block in
-                BlockView(block: block)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .textSelection(.enabled)
+        SelectableTextView(attributed: MarkdownBlock.attributedString(from: MarkdownBlock.parse(text)), plainText: text)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-private struct BlockView: View {
-    let block: MarkdownBlock
+/// Plain (non-Markdown) selectable text, used for the user's own messages.
+struct PlainMessageView: View {
+    let text: String
 
     var body: some View {
-        content
-            .padding(.leading, CGFloat(block.indent) * 18)
-            .overlay(alignment: .leading) {
-                if block.quoted { Rectangle().fill(Color.secondary.opacity(0.5)).frame(width: 3) }
-            }
-            .padding(.leading, block.quoted ? 10 : 0)
-    }
-
-    @ViewBuilder private var content: some View {
-        switch block.kind {
-        case .text(let text, let heading):
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                if let marker = block.marker { Text(marker).frame(minWidth: 16, alignment: .trailing) }
-                Text(text).font(Self.font(for: heading))
-            }
-        case .code(let code, let language):
-            VStack(alignment: .leading, spacing: 4) {
-                if let language, !language.isEmpty {
-                    Text(language).font(.caption2).foregroundStyle(.secondary)
-                }
-                ScrollView(.horizontal, showsIndicators: false) {
-                    Text(code).font(.system(.callout, design: .monospaced)).fixedSize(horizontal: true, vertical: false)
-                }
-            }
-            .padding(8)
+        SelectableTextView(
+            attributed: NSAttributedString(string: text, attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                .foregroundColor: NSColor.labelColor,
+            ]),
+            plainText: text)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.secondary.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
-        case .rule:
-            Divider()
-        case .table(let header, let rows):
-            ScrollView(.horizontal, showsIndicators: false) {
-                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
-                    GridRow { ForEach(header.indices, id: \.self) { Text(header[$0]).fontWeight(.semibold) } }
-                    Divider().gridCellColumns(max(header.count, 1))
-                    ForEach(rows.indices, id: \.self) { row in
-                        GridRow { ForEach(rows[row].indices, id: \.self) { Text(rows[row][$0]) } }
+    }
+}
+
+extension MarkdownBlock {
+    static func attributedString(from blocks: [MarkdownBlock]) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        let base = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        let mono = NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .regular)
+
+        for (index, block) in blocks.enumerated() {
+            let style = NSMutableParagraphStyle()
+            style.paragraphSpacing = 8
+            var indent = CGFloat(block.indent) * 18 + (block.quoted ? 12 : 0)
+            let piece = NSMutableAttributedString()
+
+            switch block.kind {
+            case .text(let text, let heading):
+                if let marker = block.marker {
+                    style.firstLineHeadIndent = indent
+                    indent += 18
+                    style.tabStops = [NSTextTab(textAlignment: .left, location: indent)]
+                    piece.append(NSAttributedString(string: marker + "\t", attributes: [.font: base, .foregroundColor: NSColor.labelColor]))
+                }
+                piece.append(inline(text, font: font(for: heading, base: base), color: block.quoted ? .secondaryLabelColor : .labelColor, mono: mono))
+            case .code(let code, _):
+                indent += 6
+                style.firstLineHeadIndent = indent
+                piece.append(NSAttributedString(string: code, attributes: [
+                    .font: mono, .foregroundColor: NSColor.labelColor,
+                    .backgroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.15),
+                ]))
+            case .rule:
+                piece.append(NSAttributedString(string: "────────────", attributes: [.font: base, .foregroundColor: NSColor.tertiaryLabelColor]))
+            case .table(let header, let rows):
+                let bold = NSFont.boldSystemFont(ofSize: NSFont.systemFontSize)
+                func line(_ cells: [AttributedString], font: NSFont) -> NSAttributedString {
+                    let line = NSMutableAttributedString()
+                    for (i, cell) in cells.enumerated() {
+                        if i > 0 { line.append(NSAttributedString(string: "  |  ", attributes: [.font: base, .foregroundColor: NSColor.tertiaryLabelColor])) }
+                        line.append(inline(cell, font: font, color: .labelColor, mono: mono))
                     }
+                    return line
+                }
+                piece.append(line(header, font: bold))
+                for row in rows {
+                    piece.append(NSAttributedString(string: "\n"))
+                    piece.append(line(row, font: base))
                 }
             }
+
+            if block.marker == nil { style.firstLineHeadIndent = max(style.firstLineHeadIndent, indent) }
+            style.headIndent = indent
+            piece.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: piece.length))
+            result.append(piece)
+            if index < blocks.count - 1 { result.append(NSAttributedString(string: "\n")) }
+        }
+        return result
+    }
+
+    private static func font(for heading: Int?, base: NSFont) -> NSFont {
+        switch heading {
+        case 1: .boldSystemFont(ofSize: base.pointSize + 7)
+        case 2: .boldSystemFont(ofSize: base.pointSize + 4)
+        case 3: .boldSystemFont(ofSize: base.pointSize + 2)
+        case .some: .boldSystemFont(ofSize: base.pointSize)
+        case nil: base
         }
     }
 
-    private static func font(for heading: Int?) -> Font? {
-        switch heading {
-        case 1: .title2.bold()
-        case 2: .title3.bold()
-        case 3: .headline
-        case .some: .subheadline.bold()
-        case nil: nil
+    /// Bold, italic, inline code and links.
+    private static func inline(_ text: AttributedString, font: NSFont, color: NSColor, mono: NSFont) -> NSAttributedString {
+        let out = NSMutableAttributedString()
+        for run in text.runs {
+            var runFont = font
+            var attributes: [NSAttributedString.Key: Any] = [.foregroundColor: color]
+            let intent = run.inlinePresentationIntent ?? []
+            if intent.contains(.code) {
+                runFont = mono
+                attributes[.backgroundColor] = NSColor.secondaryLabelColor.withAlphaComponent(0.18)
+            }
+            var traits: NSFontDescriptor.SymbolicTraits = []
+            if intent.contains(.stronglyEmphasized) { traits.insert(.bold) }
+            if intent.contains(.emphasized) { traits.insert(.italic) }
+            if !traits.isEmpty {
+                runFont = NSFont(descriptor: runFont.fontDescriptor.withSymbolicTraits(runFont.fontDescriptor.symbolicTraits.union(traits)), size: runFont.pointSize) ?? runFont
+            }
+            if intent.contains(.strikethrough) { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
+            if let link = run.link { attributes[.link] = link }
+            attributes[.font] = runFont
+            out.append(NSAttributedString(string: String(text[run.range].characters), attributes: attributes))
         }
+        return out
     }
 }
 

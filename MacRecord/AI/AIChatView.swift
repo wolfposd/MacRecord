@@ -5,7 +5,6 @@ struct AIChatView: View {
     @Environment(TranscriptionModel.self) private var transcription
     @Environment(AIChatModel.self) private var chat
     @State private var input = ""
-    @FocusState private var inputFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -90,12 +89,15 @@ struct AIChatView: View {
 
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            TextField("Message", text: $input, axis: .vertical)
-                .lineLimit(1...6)
-                .textFieldStyle(.roundedBorder)
-                .focused($inputFocused)
-                .onSubmit(send)             // Return sends; Shift+Return inserts a newline
-                .disabled(ai.selected == nil)
+            ComposerTextView(text: $input, isEnabled: ai.selected != nil, onSubmit: send)
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.35)))
+                .overlay(alignment: .leading) {
+                    if input.isEmpty {
+                        Text("Message").foregroundStyle(.tertiary).padding(.leading, 8).allowsHitTesting(false)
+                    }
+                }
             if chat.isStreaming {
                 Button { chat.stop() } label: { Label("Stop", systemImage: "stop.fill") }
             } else {
@@ -104,11 +106,11 @@ struct AIChatView: View {
             }
         }
         .padding(12)
-        .onAppear { inputFocused = true }
     }
 
     private func send() {
-        guard let model = ai.selected else { return }
+        guard let model = ai.selected, !chat.isStreaming,
+              !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let text = input
         input = ""
         chat.send(text, model: model, apiKey: ai.apiKey(for: model))
@@ -128,14 +130,13 @@ private struct MessageBubble: View {
                     ProgressView().controlSize(.small)
                 } else {
                     if isUser {
-                        Text(message.text).textSelection(.enabled)
+                        PlainMessageView(text: message.text)
                     } else {
                         MarkdownView(text: message.text)
                     }
                 }
             }
             .padding(10)
-            .contextMenu { Button("Copy") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(message.text, forType: .string) } }
             .background(isUser ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12),
                         in: RoundedRectangle(cornerRadius: 10))
             if !isUser { Spacer(minLength: 60) }
