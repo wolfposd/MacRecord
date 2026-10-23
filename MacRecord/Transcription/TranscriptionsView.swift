@@ -264,20 +264,21 @@ struct TranscriptionsView: View {
     }
 
     private var detailList: some View {
-        List(filteredRecordings) { recording in
-            // The icons/text inside RecordingRow can otherwise claim the click/drag before it starts; a
-            // transparent layer stacked on top owns tap and drag uniformly across the whole row instead.
-            ZStack {
-                RecordingRow(recording: recording).allowsHitTesting(false)
-                Color.clear
-                    .contentShape(Rectangle())
-                    .draggable(recording.url) { RecordingRow(recording: recording).frame(width: 260) }
-                    .simultaneousGesture(TapGesture().onEnded { transcribeActions.open(recording.url) })
-            }
-            .listRowSeparator(.visible)
-            .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
-            .alignmentGuide(.listRowSeparatorTrailing) { $0.width }
-            .contextMenu {
+        ScrollViewReader { proxy in
+            List(filteredRecordings) { recording in
+                // The icons/text inside RecordingRow can otherwise claim the click/drag before it starts; a
+                // transparent layer stacked on top owns tap and drag uniformly across the whole row instead.
+                ZStack {
+                    RecordingRow(recording: recording).allowsHitTesting(false)
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .draggable(recording.url) { RecordingRow(recording: recording).frame(width: 260) }
+                        .simultaneousGesture(TapGesture().onEnded { transcribeActions.open(recording.url) })
+                }
+                .listRowSeparator(.visible)
+                .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+                .alignmentGuide(.listRowSeparatorTrailing) { $0.width }
+                .contextMenu {
                     Button(recording.hasTranscript ? "Open Transcript" : "Transcribe…") {
                         transcribeActions.open(recording.url)
                     }
@@ -301,6 +302,10 @@ struct TranscriptionsView: View {
                         .disabled(busy(recording))
                     Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([recording.url]) }
                 }
+            }
+            .onChange(of: selectedTopic) {
+                if let first = filteredRecordings.first { proxy.scrollTo(first.id, anchor: .top) }
+            }
         }
     }
 }
