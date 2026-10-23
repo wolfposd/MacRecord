@@ -12,7 +12,8 @@ enum AIProvider: String, CaseIterable, Identifiable, Codable {
         }
     }
     /// Singletons are a single entry with a fixed name; adding one again reopens the existing entry.
-    var isSingleton: Bool { self != .custom }
+    /// Claude Code is not one: each instance can run a different model, so multiple entries are allowed.
+    var isSingleton: Bool { self == .claude }
 }
 
 /// One model the user added, shown as a badge under "Your Models".
@@ -86,15 +87,22 @@ final class AIConfigStore {
 
     /// Adds a new model (`id == nil`) or updates an existing one, and selects it.
     /// Claude is a single entry with a fixed name and endpoint; only key and model name are editable.
+    /// Claude Code instances are named after the model they run, so several can coexist.
     func save(_ config: CustomAIConfig, provider: AIProvider, id: UUID? = nil) {
         var id = id
         if provider.isSingleton { id = id ?? models.first { $0.provider == provider }?.id }
-        let name = provider.isSingleton ? provider.title : config.name.trimmingCharacters(in: .whitespaces)
+        let modelName = config.modelName.trimmingCharacters(in: .whitespaces)
+        let customName = config.name.trimmingCharacters(in: .whitespaces)
+        let name = switch provider {
+        case .claude: provider.title
+        case .claudeCode:
+            !customName.isEmpty ? customName : modelName.isEmpty ? provider.title : "\(provider.title) (\(modelName))"
+        case .custom: customName
+        }
         let baseURL = switch provider {
         case .claude: Self.anthropicURL
         case .claudeCode, .custom: config.baseURL.trimmingCharacters(in: .whitespaces)
         }
-        let modelName = config.modelName.trimmingCharacters(in: .whitespaces)
         let key = config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
 
         var model = AIModel(provider: provider, name: name, baseURL: baseURL, modelName: modelName)

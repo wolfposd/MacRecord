@@ -73,7 +73,8 @@ struct AISettingsView: View {
                     HStack(spacing: 10) {
                         ForEach(AIProvider.allCases) { provider in
                             ProviderBadge(title: provider.title, subtitle: nil, isSelected: false) {
-                                // Claude and Claude Code are single entries: reopen for editing if they already exist.
+                                // Claude is a single entry: reopen for editing if it already exists.
+                                // Claude Code and custom models always open a blank form to add another instance.
                                 let existing = provider.isSingleton ? ai.models.first { $0.provider == provider }?.id : nil
                                 path.append(.form(provider, existing))
                             }
@@ -167,6 +168,7 @@ private struct ModelFormView: View {
                         .autocorrectionDisabled()
                 }
                 if provider == .claudeCode {
+                    TextField("Name (optional)", text: $config.name, prompt: Text("Claude Code"))
                     TextField("Model (optional)", text: $config.modelName, prompt: Text("sonnet"))
                         .autocorrectionDisabled()
                     TextField("CLI path (optional)", text: $config.baseURL, prompt: Text("auto-detect"))
@@ -226,7 +228,8 @@ private struct ModelFormView: View {
     private var title: String {
         switch (provider, editing) {
         case (.claude, _): "Anthropic Claude"
-        case (.claudeCode, _): "Claude Code"
+        case (.claudeCode, nil): "Add Claude Code model"
+        case (.claudeCode, _): "Edit Claude Code model"
         case (.custom, nil): "Add custom model"
         case (.custom, _): "Edit model"
         }

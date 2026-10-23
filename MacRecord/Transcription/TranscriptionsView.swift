@@ -196,12 +196,16 @@ private struct RecordingRow: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(recording.title).font(.headline)
-                Text(recording.trackCount == 0
-                     ? "Audio removed"
-                     : "\(recording.trackCount) track\(recording.trackCount == 1 ? "" : "s") · "
-                       + ByteCountFormatter.string(fromByteCount: recording.bytes, countStyle: .file))
-                    .font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Image(systemName: recording.trackCount == 0 ? "music.note.slash" : "music.note")
+                        .foregroundStyle(.secondary)
+                    Text(recording.title).font(.headline)
+                }
+                if recording.trackCount > 0 {
+                    Text("\(recording.trackCount) track\(recording.trackCount == 1 ? "" : "s") · "
+                         + ByteCountFormatter.string(fromByteCount: recording.bytes, countStyle: .file))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 if !recording.summary.isEmpty {
                     Text(recording.summary).font(.callout).lineLimit(2).padding(.top, 2)
                 }
