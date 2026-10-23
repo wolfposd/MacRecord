@@ -223,19 +223,20 @@ struct TranscriptionsView: View {
 
     private var sidebar: some View {
         List(selection: $selectedTopic) {
-            Label("All Recordings", systemImage: "tray.full").tag(TopicFilter.all)
+            Label("All Recordings (\(list.recordings.count))", systemImage: "tray.full").tag(TopicFilter.all)
             dropRow(.uncategorized) {
-                Label("Uncategorized", systemImage: "questionmark.folder")
+                Label("Uncategorized (\(list.recordings.filter { $0.topic == nil }.count))", systemImage: "questionmark.folder")
             } onDrop: { move($0, toTopic: nil) }
             if !list.topics.isEmpty {
                 Section("Topics") {
                     ForEach(list.topics.sorted(), id: \.self) { name in
+                        let count = list.recordings.filter { $0.topic == name }.count
                         dropRow(.topic(name)) {
-                            Label(name, systemImage: "folder")
+                            Label("\(name) (\(count))", systemImage: "folder")
                                 .contextMenu {
                                     Button("Rename…") { topicPrompt = .renameTopic(name) }
                                     Button("Delete", role: .destructive) { deletingTopic = name }
-                                        .disabled(!list.recordings.filter { $0.topic == name }.isEmpty)
+                                        .disabled(count > 0)
                                 }
                         } onDrop: { move($0, toTopic: name) }
                     }
